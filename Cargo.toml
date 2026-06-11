@@ -13,10 +13,10 @@ path = "tests/compat.rs"
 
 [dependencies]
 # Internal crates (path deps to main rheo repo)
-rheo-core = { path = "/home/alice/code/fcl/rheo/crates/core" }
-rheo-html = { path = "/home/alice/code/fcl/rheo/crates/html" }
-rheo-pdf = { path = "/home/alice/code/fcl/rheo/crates/pdf" }
-rheo-epub = { path = "/home/alice/code/fcl/rheo/crates/epub" }
+rheo-core = { path = "../rheo/crates/core" }
+rheo-html = { path = "../rheo/crates/html" }
+rheo-pdf = { path = "../rheo/crates/pdf" }
+rheo-epub = { path = "../rheo/crates/epub" }
 
 # Test-specific dependencies (literal versions)
 ntest = "0.9"
