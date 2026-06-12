@@ -1,3 +1,4 @@
 *
-!merged-imports
 !.gitignore
+!merged-imports
+!merged-imports/**
