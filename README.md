@@ -16,19 +16,6 @@ git clone https://github.com/freecomputinglab/rheo.git ../rheo
 
 The `Cargo.toml` path dependencies point to `../rheo/crates/*`.
 
-### 2. Install @rheo/* Typst packages
-
-Some tests require the `@rheo/*` Typst packages (for `#import "@rheo/..."` syntax). Install them:
-
-```bash
-# Clone rheo-packages into the Typst package cache
-git clone https://github.com/freecomputinglab/rheo-packages.git ~/.cache/typst/packages/rheo
-
-# Build the packages (requires pnpm 10+ and Node 22+)
-cd ~/.cache/typst/packages/rheo
-pnpm install
-just build
-```
 
 ## CI
 
