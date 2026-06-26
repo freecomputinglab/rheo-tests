@@ -32,30 +32,26 @@ just build
 
 ## CI
 
-The CI workflow (`.github/workflows/ci.yml`) runs on push to `main`, all pull requests, and `workflow_dispatch`.
+CI lives entirely in the main rheo repo (`.github/workflows/ci.yml`). rheo-tests has no CI of its own — it is cloned as a sibling by rheo's CI at test time.
 
-### Testing against a specific rheo branch
+### Branch naming convention
 
-By default CI clones rheo `main`. To test against a different rheo branch, use the **branch naming convention**: name the rheo-tests branch `rheo/<rheo-branch>` and CI will automatically test against that rheo branch.
-
-Example: to test the rheo-tests changes against rheo PR branch `feat/typst-v0.15.0`, create a rheo-tests branch named `rheo/feat/typst-v0.15.0`. The CI step resolves:
+When a rheo-tests change needs to pair with a rheo PR, name the rheo-tests branch `rheo/<rheo-branch>`. Rheo's CI auto-detects this and clones the paired branch instead of `main`:
 
 ```
-rheo-tests branch        → rheo ref used
-────────────────────────────────────────
-rheo/feat/my-feature     → feat/my-feature
-add-slides-test          → main (default)
-main                     → main (default)
+rheo branch              → rheo-tests branch cloned by rheo CI
+────────────────────────────────────────────────────────────
+feat/typst-v0.15.0       → rheo/feat/typst-v0.15.0 (if exists, else main)
+main                     → main
+fix/some-bug             → main (no paired branch)
 ```
-
-You can also override via `workflow_dispatch` → `rheo_ref` input, which takes priority over the branch convention.
 
 ### Merge order
 
-When a rheo-tests PR targets a rheo PR:
+When a rheo-tests PR pairs with a rheo PR:
 
-1. Merge the rheo-tests PR first (it tests against the rheo branch; once green, merge)
-2. Then merge the rheo PR (rheo's own CI clones rheo-tests `main` as a sibling)
+1. Merge the rheo-tests PR first (snapshots land on `main`)
+2. Then merge the rheo PR (rheo CI now uses rheo-tests `main`, which already has the updated snapshots)
 
 ## Test Structure
 
@@ -85,10 +81,9 @@ When a rheo-tests PR targets a rheo PR:
 │   │   │   └── epub/
 │   │   └── blog_post/
 │   └── cases/
-├── store/                  # Compat test fixtures (committed)
-│   └── compat/
-│       └── merged-imports/
-└── .github/                # CI workflows
+└── store/                  # Compat test fixtures (committed)
+    └── compat/
+        └── merged-imports/
 ```
 
 ## Running Tests
