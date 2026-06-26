@@ -312,14 +312,23 @@ fn validate_binary_file_from_metadata(
     if let Ok(json_str) = fs::read_to_string(&metadata_path)
         && let Ok(metadata) = serde_json::from_str::<BinaryFileMetadata>(&json_str)
     {
-        let build_relative_path = metadata
-            .path
-            .as_ref()
-            .map(|p| extract_build_relative_path(p))
-            .unwrap_or_else(|| {
+        // CSS paths are stored as build-relative directly; other binary files
+        // store a repo-relative path that needs the first 2 components stripped.
+        let build_relative_path = if metadata.filetype == "css" {
+            metadata.path.as_ref().map(PathBuf::from).unwrap_or_else(|| {
                 let file_str = metadata_file.to_string_lossy();
                 PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-            });
+            })
+        } else {
+            metadata
+                .path
+                .as_ref()
+                .map(|p| extract_build_relative_path(p))
+                .unwrap_or_else(|| {
+                    let file_str = metadata_file.to_string_lossy();
+                    PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
+                })
+        };
 
         let actual_file_path = actual_dir.join(&build_relative_path);
 
@@ -371,14 +380,21 @@ fn build_expected_files_set(
         if let Ok(json_str) = fs::read_to_string(&metadata_path)
             && let Ok(metadata) = serde_json::from_str::<BinaryFileMetadata>(&json_str)
         {
-            let build_relative_path = metadata
-                .path
-                .as_ref()
-                .map(|p| extract_build_relative_path(p))
-                .unwrap_or_else(|| {
+            let build_relative_path = if metadata.filetype == "css" {
+                metadata.path.as_ref().map(PathBuf::from).unwrap_or_else(|| {
                     let file_str = metadata_file.to_string_lossy();
                     PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-                });
+                })
+            } else {
+                metadata
+                    .path
+                    .as_ref()
+                    .map(|p| extract_build_relative_path(p))
+                    .unwrap_or_else(|| {
+                        let file_str = metadata_file.to_string_lossy();
+                        PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
+                    })
+            };
             expected_files.insert(build_relative_path);
         }
     }

@@ -43,6 +43,7 @@ use std::path::PathBuf;
 #[test_case("cases/error_formatting/array_index_error.typ")]
 #[test_case("cases/merged_subdir_imports")]
 #[test_case("cases/rheo_package_slides")]
+#[test_case("cases/math")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
