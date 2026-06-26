@@ -16,19 +16,29 @@ git clone https://github.com/freecomputinglab/rheo.git ../rheo
 
 The `Cargo.toml` path dependencies point to `../rheo/crates/*`.
 
-### 2. Install @rheo/* Typst packages
 
-Some tests require the `@rheo/*` Typst packages (for `#import "@rheo/..."` syntax). Install them:
+## CI
 
-```bash
-# Clone rheo-packages into the Typst package cache
-git clone https://github.com/freecomputinglab/rheo-packages.git ~/.cache/typst/packages/rheo
+CI lives entirely in the main rheo repo (`.github/workflows/ci.yml`). rheo-tests has no CI of its own — it is cloned as a sibling by rheo's CI at test time.
 
-# Build the packages (requires pnpm 10+ and Node 22+)
-cd ~/.cache/typst/packages/rheo
-pnpm install
-just build
+### Branch naming convention
+
+When a rheo-tests change needs to pair with a rheo PR, name the rheo-tests branch `rheo/<rheo-branch>`. Rheo's CI auto-detects this and clones the paired branch instead of `main`:
+
 ```
+rheo branch              → rheo-tests branch cloned by rheo CI
+────────────────────────────────────────────────────────────
+feat/typst-v0.15.0       → rheo/feat/typst-v0.15.0 (if exists, else main)
+main                     → main
+fix/some-bug             → main (no paired branch)
+```
+
+### Merge order
+
+When a rheo-tests PR pairs with a rheo PR:
+
+1. Merge the rheo-tests PR first (snapshots land on `main`)
+2. Then merge the rheo PR (rheo CI now uses rheo-tests `main`, which already has the updated snapshots)
 
 ## Test Structure
 
@@ -58,10 +68,9 @@ just build
 │   │   │   └── epub/
 │   │   └── blog_post/
 │   └── cases/
-├── store/                  # Compat test fixtures (committed)
-│   └── compat/
-│       └── merged-imports/
-└── .github/                # CI workflows
+└── store/                  # Compat test fixtures (committed)
+    └── compat/
+        └── merged-imports/
 ```
 
 ## Running Tests

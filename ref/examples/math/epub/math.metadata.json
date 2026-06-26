@@ -1,0 +1,10 @@
+{
+  "filetype": "epub",
+  "file_size": 5414,
+  "title": "Math",
+  "language": "en",
+  "spine_files": [
+    "main.xhtml"
+  ],
+  "has_nav": true
+}

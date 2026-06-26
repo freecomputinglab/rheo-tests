@@ -1,0 +1,6 @@
+version = "0.3.1"
+formats = ["html", "epub"]
+
+[html.spine]
+title = "Math Test"
+vertebrae = ["main.typ"]
