@@ -30,6 +30,33 @@ pnpm install
 just build
 ```
 
+## CI
+
+The CI workflow (`.github/workflows/ci.yml`) runs on push to `main`, all pull requests, and `workflow_dispatch`.
+
+### Testing against a specific rheo branch
+
+By default CI clones rheo `main`. To test against a different rheo branch, use the **branch naming convention**: name the rheo-tests branch `rheo/<rheo-branch>` and CI will automatically test against that rheo branch.
+
+Example: to test the rheo-tests changes against rheo PR branch `feat/typst-v0.15.0`, create a rheo-tests branch named `rheo/feat/typst-v0.15.0`. The CI step resolves:
+
+```
+rheo-tests branch        → rheo ref used
+────────────────────────────────────────
+rheo/feat/my-feature     → feat/my-feature
+add-slides-test          → main (default)
+main                     → main (default)
+```
+
+You can also override via `workflow_dispatch` → `rheo_ref` input, which takes priority over the branch convention.
+
+### Merge order
+
+When a rheo-tests PR targets a rheo PR:
+
+1. Merge the rheo-tests PR first (it tests against the rheo branch; once green, merge)
+2. Then merge the rheo PR (rheo's own CI clones rheo-tests `main` as a sibling)
+
 ## Test Structure
 
 ```
