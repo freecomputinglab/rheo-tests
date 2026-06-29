@@ -28,6 +28,7 @@ use std::path::PathBuf;
 #[test_case("cases/multiple_links_inline")]
 #[test_case("cases/pdf_individual")]
 #[test_case("cases/pdf_merge_false")]
+#[test_case("cases/merged_pdf_cross_links")]
 #[test_case("cases/script_injection")]
 #[test_case("cases/script_injection_no_css")]
 #[test_case("cases/relative_path_links")]

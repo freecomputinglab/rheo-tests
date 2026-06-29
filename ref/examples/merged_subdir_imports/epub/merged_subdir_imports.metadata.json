@@ -1,10 +1,10 @@
 {
   "filetype": "epub",
-  "file_size": 4009,
+  "file_size": 4044,
   "title": "Merged Subdir Imports",
   "language": "en",
   "spine_files": [
-    "author.xhtml",
+    "author:author.xhtml",
     "index.xhtml",
     "template.xhtml"
   ],
