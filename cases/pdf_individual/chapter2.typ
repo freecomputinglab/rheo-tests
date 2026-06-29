@@ -4,4 +4,4 @@
 
 This is the second chapter.
 
-Refer back to #link("./chapter1.typ")[Chapter 1] if needed.
+Refer back to #link(<chapter1>)[Chapter 1] if needed.

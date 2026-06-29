@@ -4,6 +4,6 @@ Welcome to the cross-directory test.
 
 == Overview
 
-This document links to #link("chapters/ch1.typ")[Chapter 1].
+This document links to #link(<ch1>)[Chapter 1].
 
-See also #link("chapters/ch2.typ")[Chapter 2] for more details.
+See also #link(<ch2>)[Chapter 2] for more details.

@@ -2,7 +2,7 @@
 
 This is the second document.
 
-Go #link("./doc1.typ")[Back to Doc 1] to see the first document.
+Go #link(<doc1>)[Back to Doc 1] to see the first document.
 
 == Another Section
 

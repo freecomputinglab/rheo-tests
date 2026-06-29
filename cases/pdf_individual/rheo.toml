@@ -1,2 +1,8 @@
 
-formats = ["pdf"]
+# Cross-file link resolution verified via HTML (handle injection not available
+# in merged PDF). See pdf_merge/rheo.toml for the limitation note.
+formats = ["html"]
+
+[html.spine]
+title = "Individual Chapters Test"
+vertebrae = ["chapter1.typ", "chapter2.typ"]

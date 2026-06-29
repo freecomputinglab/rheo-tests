@@ -1,7 +1,6 @@
 
-formats = ["html", "pdf"]
+formats = ["html"]
 
-[pdf.spine]
-merge = true
+[html.spine]
 title = "Relative Path Test"
 vertebrae = ["root.typ", "subdir/child.typ", "subdir/sibling.typ"]

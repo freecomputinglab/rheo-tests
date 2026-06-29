@@ -25,9 +25,11 @@ js_scripts = "main.js"
     std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
 
     let imports = vec!["@testns/testpkg:0.1.0".to_string()];
-    let blocks = detect_manifest_package_assets_in_dirs(&imports, "html", &[search_root
-        .path()
-        .to_path_buf()]);
+    let blocks = detect_manifest_package_assets_in_dirs(
+        &imports,
+        "html",
+        &[search_root.path().to_path_buf()],
+    );
 
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].assets.dest.as_deref(), Some("testns/testpkg"));
@@ -61,9 +63,11 @@ fn detect_manifest_skips_packages_without_tool_rheo() {
     .unwrap();
 
     let imports = vec!["@otherns/pkg:1.0".to_string()];
-    let blocks = detect_manifest_package_assets_in_dirs(&imports, "html", &[search_root
-        .path()
-        .to_path_buf()]);
+    let blocks = detect_manifest_package_assets_in_dirs(
+        &imports,
+        "html",
+        &[search_root.path().to_path_buf()],
+    );
     assert!(blocks.is_empty());
 }
 
@@ -236,10 +240,14 @@ Opt-out test.
 
     let build_dir = project_path.join("build");
 
-    let output = run_rheo_compile(project_path, &build_dir, vec![
-        ("XDG_DATA_HOME", data_dir.path()),
-        ("XDG_CACHE_HOME", cache_dir.path()),
-    ]);
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
 
     assert!(
         output.status.success(),
@@ -292,10 +300,14 @@ Non-preview auto-detect test.
 
     let build_dir = project_path.join("build");
 
-    let output = run_rheo_compile(project_path, &build_dir, vec![
-        ("XDG_DATA_HOME", data_dir.path()),
-        ("XDG_CACHE_HOME", cache_dir.path()),
-    ]);
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
 
     assert!(
         output.status.success(),
@@ -364,10 +376,14 @@ Copy pattern test.
 
     let build_dir = project_path.join("build");
 
-    let output = run_rheo_compile(project_path, &build_dir, vec![
-        ("XDG_DATA_HOME", data_dir.path()),
-        ("XDG_CACHE_HOME", cache_dir.path()),
-    ]);
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
 
     assert!(
         output.status.success(),

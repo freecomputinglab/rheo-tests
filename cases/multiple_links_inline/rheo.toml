@@ -1,0 +1,6 @@
+
+formats = ["html"]
+
+[html.spine]
+title = "Multiple Links Inline Test"
+vertebrae = ["multiple_links_inline.typ", "file1.typ", "file2.typ", "a.typ", "b.typ", "c.typ", "x.typ", "y.typ", "intro.typ", "chapter1.typ", "conclusion.typ"]

@@ -2,4 +2,4 @@
 
 This filename contains numbers.
 
-Back to #link("main.typ")[main].
+Back to #link(<main>)[main].

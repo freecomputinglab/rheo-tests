@@ -5,7 +5,7 @@
 
 This is the first document.
 
-You can navigate to #link("./doc2.typ")[See Doc 2] for more information.
+You can navigate to #link(<doc2>)[See Doc 2] for more information.
 
 == Section in Doc 1
 

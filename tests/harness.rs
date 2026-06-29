@@ -22,7 +22,8 @@ use std::path::PathBuf;
 #[test_case("cases/link_path_edge_cases")]
 #[test_case("cases/link_transformation")]
 #[test_case("cases/links_with_fragments")]
-#[test_case("cases/multiple_links_inline.typ")]
+#[test_case("cases/dead_link_error.typ")]
+#[test_case("cases/multiple_links_inline")]
 #[test_case("cases/pdf_individual")]
 #[test_case("cases/pdf_merge_false")]
 #[test_case("cases/script_injection")]
@@ -222,7 +223,7 @@ fn run_test_case(name: &str) {
                 update_html_references(test_name, &html_output, &project_path)
                     .expect("Failed to update HTML references");
             } else {
-                verify_html_output(test_name, &html_output);
+                verify_html_output(test_name, &html_output, test_case.is_single_file());
             }
         }
     }

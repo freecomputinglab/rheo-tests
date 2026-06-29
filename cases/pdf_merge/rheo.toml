@@ -1,4 +1,8 @@
 
+# Cross-file #link(<handle>) does not work in merged PDF: rheo only injects
+# handle anchors for OnePerVertebra (HTML/EPUB), not SingleCombined (PDF).
+# Cross-file link resolution is verified in the HTML cases instead.
+
 [pdf.spine]
 merge = true
 vertebrae = ["intro.typ", "chapter*.typ", "conclusion.typ"]

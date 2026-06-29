@@ -2,4 +2,4 @@
 
 First chapter content.
 
-See also #link("./chapter2.typ")[Chapter 2].
+See also Chapter 2.
