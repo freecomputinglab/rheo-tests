@@ -1,4 +1,4 @@
-version = "0.2.1"
+version = "0.4.0"
 
 # Relative to the rheo folder, if you specify a `oontent_dir`,
 # all of the `exclude` patterns become relative to this folder.
