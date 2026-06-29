@@ -1735,3 +1735,75 @@ fn test_rheo_var_non_string_error() {
         combined
     );
 }
+
+/// Error path: synthesized escape label collides with a user-authored label.
+///
+/// `content/a/file.typ` synthesizes escape `<a:file.typ>`. A second source
+/// hand-authors the same label at markup level. rheo should error before
+/// Typst compilation begins.
+#[test]
+fn test_escape_label_collision_error() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    let content_dir = project_path.join("content");
+    let sub_dir = content_dir.join("a");
+    std::fs::create_dir_all(&sub_dir).expect("Failed to create content/a");
+    let build_dir = project_path.join("build");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n\
+             content_dir = \"content\"\n\
+             \n\
+             [html.spine]\n\
+             title = \"Escape Collision Test\"\n\
+             vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+
+    // root.typ hand-authors <a:file.typ>, which is the escape alias rheo would
+    // synthesize for content/a/file.typ.
+    std::fs::write(
+        content_dir.join("root.typ"),
+        "= Root\n\nThis label conflicts with rheo's escape alias. <a:file.typ>\n",
+    )
+    .expect("Failed to write root.typ");
+
+    std::fs::write(
+        sub_dir.join("file.typ"),
+        "= File\n\nContent in subdirectory.\n",
+    )
+    .expect("Failed to write a/file.typ");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail on escape label collision"
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("a:file.typ") && combined.contains("collides"),
+        "Expected escape collision error, got:\n{}",
+        combined
+    );
+}
