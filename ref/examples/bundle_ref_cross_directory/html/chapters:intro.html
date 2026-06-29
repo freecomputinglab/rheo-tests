@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Root</title><style>.header {
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="alternate" type="application/atom+xml" title="Bundle Ref Test Feed" href="https://example.com/feed.xml"><title>Intro</title><style>.header {
   max-height: 40px;
   display: flex;
   justify-content: center;
@@ -126,4 +126,4 @@ section[role="doc-endnotes"] ol li a[role="doc-backlink"] {
     font-size: 0.9em;
   }
 }
-</style></head><body><span id="root"></span><h2>Root Document</h2><p>This is the root of the test project.</p><h3>Links to Subdirectory</h3><p>See <a href="subdir:child.html">the child document</a> in the subdir.</p><p>Also check out <a href="subdir:sibling.html">the sibling</a>.</p><h3>More Content</h3><p>This tests that subdirectory paths transform correctly.</p></body></html>
+</style></head><body><h2>Chapter Introduction</h2><p>This is a nested introduction that shares the “intro” stem with the root-level intro.typ.</p><h3>Handle Scheme</h3><p>rheo assigns handles based on path:</p><ul><li>Root files: bare handle <span id="intro">(e.g.</span> )</li><li>Nested files: ‘:’-prefixed handle <span id="loc-1">(e.g.</span> )</li></ul><h3>Cross-References</h3><p>Link back to <a href="#intro">the root introduction</a> using the bare handle.</p><p>Reference <a href="chapters:ch1.html">Chapter 1</a> in the same directory.</p><p>Continue to the <a href="chapters:ch1.html">next chapter</a> for more content.</p></body></html>

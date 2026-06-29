@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Child</title><style>.header {
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="alternate" type="application/atom+xml" title="Bundle Ref Test Feed" href="https://example.com/feed.xml"><title>Ch1</title><style>.header {
   max-height: 40px;
   display: flex;
   justify-content: center;
@@ -126,4 +126,4 @@ section[role="doc-endnotes"] ol li a[role="doc-backlink"] {
     font-size: 0.9em;
   }
 }
-</style></head><body><span id="child"></span><h2>Child Document</h2><p>This document is in a subdirectory.</p><h3>Link to Parent Directory</h3><p>Go back to <a href="root.html">the root document</a>.</p><h3>Link to Sibling (Explicit Same Dir)</h3><p>See <a href="sibling.html">the sibling</a> in the same directory.</p><h3>Link to Sibling (Implicit Same Dir)</h3><p>Also see <a href="sibling.html">the sibling again</a> with implicit path.</p></body></html>
+</style></head><body><span id="loc-1"></span><h2>Chapter 1: The Beginning</h2><p>This is the first actual chapter content.</p><h3>References</h3><p>Reference back to <a href="chapters%3Aintro.html#intro">the root introduction</a> and <a href="chapters%3Aintro.html#loc-1">the nested introduction</a>.</p><p>Both work correctly: root-level files get bare handles, nested files get ‘:’-prefixed handles.</p><h3>Self Reference</h3><p>This chapter can be referenced as <a href="chapters:ch1.html">Chapter 1</a>.</p><h3>Content</h3><p>Some example chapter content here.</p></body></html>

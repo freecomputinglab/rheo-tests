@@ -6,6 +6,6 @@ This is the first chapter.
 
 Go back to #link(<intro>)[the introduction].
 
-Continue to #link(<ch2>)[Chapter 2] (sibling).
+Continue to #link(<chapters:ch2>)[Chapter 2] (sibling).
 
-See #link(<notes>)[the appendix notes] for additional info.
+See #link(<appendix:notes>)[the appendix notes] for additional info.

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ch2</title><style>.header {
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="alternate" type="application/atom+xml" title="Bundle Ref Test Feed" href="https://example.com/feed.xml"><title>Intro</title><style>.header {
   max-height: 40px;
   display: flex;
   justify-content: center;
@@ -126,4 +126,4 @@ section[role="doc-endnotes"] ol li a[role="doc-backlink"] {
     font-size: 0.9em;
   }
 }
-</style></head><body><span id="ch2"></span><h2>Chapter 2</h2><p>This is the second chapter.</p><h3>Navigation</h3><p>Previous: <a href="ch1.html">Chapter 1</a></p><p>Root: <a href="intro.html">Introduction</a></p><h3>Content</h3><p>Testing cross-directory navigation patterns.</p></body></html>
+</style></head><body><h2>Introduction</h2><p>This is the root-level introduction document.</p><h3>Cross-File References</h3><p>This demonstrates <a href="chapters%3Aintro.html#loc-1">the nested introduction</a> with path-prefixed handle.</p><p>You can also reference <a href="chapters:ch1.html">Chapter 1</a> in the chapters directory.</p><h3>Back References</h3><p>The nested intro should link back here using <a href="chapters%3Aintro.html#intro">the root introduction</a> (bare handle since we’re the unique “intro” at root level).</p></body></html>

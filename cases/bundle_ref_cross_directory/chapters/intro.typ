@@ -7,16 +7,16 @@
 
 This is a nested introduction that shares the "intro" stem with the root-level intro.typ.
 
-== Handle Collision Resolution
+== Handle Scheme
 
-Because both files are named "intro.typ", rheo assigns:
-- Root file: @intro (bare handle)
-- This file: @chapters-intro (path-qualified handle)
+rheo assigns handles based on path:
+- Root files: bare handle (e.g. <intro>)
+- Nested files: ':'-prefixed handle (e.g. <chapters:intro>)
 
 == Cross-References
 
-Link back to [@intro][the root introduction] using the bare handle.
+Link back to #link(<intro>)[the root introduction] using the bare handle.
 
-Reference [@ch1][Chapter 1] in the same directory.
+Reference #link(<chapters:ch1>)[Chapter 1] in the same directory.
 
-Continue to the [@ch1][next chapter] for more content.
+Continue to the #link(<chapters:ch1>)[next chapter] for more content.

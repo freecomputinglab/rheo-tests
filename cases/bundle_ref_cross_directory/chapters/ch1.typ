@@ -10,13 +10,13 @@ This is the first actual chapter content.
 
 == References
 
-Reference back to [@intro][the root introduction] and [@chapters-intro][the nested introduction].
+Reference back to #link(<intro>)[the root introduction] and #link(<chapters:intro>)[the nested introduction].
 
-Both work correctly despite the stem collision, thanks to path-qualified handles.
+Both work correctly: root-level files get bare handles, nested files get ':'-prefixed handles.
 
 == Self Reference
 
-This chapter can be referenced as [@ch1][Chapter 1].
+This chapter can be referenced as #link(<chapters:ch1>)[Chapter 1].
 
 == Content
 

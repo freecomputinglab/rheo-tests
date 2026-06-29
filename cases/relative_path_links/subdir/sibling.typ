@@ -4,7 +4,7 @@ This is the sibling document in the subdirectory.
 
 == Link to Sibling
 
-Go to #link(<child>)[the child document].
+Go to #link(<subdir:child>)[the child document].
 
 == Link to Parent Directory
 

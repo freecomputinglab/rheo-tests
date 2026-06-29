@@ -4,7 +4,7 @@ This is the second chapter.
 
 == Navigation
 
-Previous: #link(<ch1>)[Chapter 1]
+Previous: #link(<chapters:ch1>)[Chapter 1]
 
 Root: #link(<intro>)[Introduction]
 
