@@ -1808,3 +1808,50 @@ fn test_escape_label_collision_error() {
         combined
     );
 }
+
+/// `rheo migrate --apply` rewrites pre-0.4.0 cross-file link syntax
+/// (`#link("./file.typ")`) to the handle form (`#link(<handle>)`), leaves
+/// external URLs untouched, and bumps the project's `rheo.toml` version.
+#[test]
+fn migrate_rewrites_links() {
+    let test_case = TestCase::new("cases/migrate_link_syntax");
+    let original_project_path = test_case.project_path();
+
+    // Migrate mutates the project in place, so operate on an isolated copy.
+    let test_store = PathBuf::from("store").join("migrate_link_syntax");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let a = std::fs::read_to_string(test_store.join("a.typ")).expect("read a.typ");
+    let b = std::fs::read_to_string(test_store.join("b.typ")).expect("read b.typ");
+    let toml = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+
+    // Old path links rewritten to the canonical handle form.
+    assert!(a.contains("#link(<b>)"), "a.typ link not rewritten:\n{a}");
+    assert!(b.contains("#link(<a>)"), "b.typ link not rewritten:\n{b}");
+    // External URL left untouched.
+    assert!(
+        a.contains("#link(\"https://example.com\")"),
+        "external link should be untouched:\n{a}"
+    );
+    // Version bumped off the old 0.3.1 pin (target is the migrating binary's version).
+    assert!(
+        !toml.contains("0.3.1"),
+        "rheo.toml version should have been bumped:\n{toml}"
+    );
+}

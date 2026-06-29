@@ -1,4 +1,4 @@
-version = "0.3.1"
+version = "0.4.0"
 # Regression guard for rheo-gae: cross-file #link(<handle>) using synthesized
 # handles must resolve inside a merged (SingleCombined) PDF. None of the files
 # below define explicit labels, so if rheo stops injecting handle anchors into
