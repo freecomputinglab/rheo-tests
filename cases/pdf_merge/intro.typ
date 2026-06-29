@@ -2,4 +2,4 @@
 
 This is the introduction.
 
-Continue to #link("./chapter1.typ")[Chapter 1].
+See Chapter 1 for more.

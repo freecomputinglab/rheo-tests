@@ -4,9 +4,9 @@ Additional notes and references.
 
 == Cross References
 
-Back to #link("../chapters/ch1.typ")[Chapter 1].
+Back to #link(<chapters:ch1>)[Chapter 1].
 
-Return to #link("../intro.typ")[the introduction].
+Return to #link(<intro>)[the introduction].
 
 == Details
 

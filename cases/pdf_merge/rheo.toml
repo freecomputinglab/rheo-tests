@@ -1,3 +1,6 @@
+version = "0.3.1"
+# Cross-file #link(<handle>) in merged PDF is exercised by the
+# merged_pdf_cross_links case; this case checks merged page output.
 
 [pdf.spine]
 merge = true

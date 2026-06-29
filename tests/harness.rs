@@ -17,14 +17,18 @@ use std::path::PathBuf;
 #[test_case("examples/blog_site/content/severance-ep-1.typ")]
 #[test_case("examples/blog_post/portable_epubs.typ")]
 #[test_case("cases/code_blocks_with_links")]
+#[test_case("cases/cross_directory_label_collision")]
 #[test_case("cases/cross_directory_links")]
+#[test_case("cases/bundle_ref_cross_directory")]
 #[test_case("cases/epub_inferred_spine")]
 #[test_case("cases/link_path_edge_cases")]
 #[test_case("cases/link_transformation")]
 #[test_case("cases/links_with_fragments")]
-#[test_case("cases/multiple_links_inline.typ")]
+#[test_case("cases/dead_link_error.typ")]
+#[test_case("cases/multiple_links_inline")]
 #[test_case("cases/pdf_individual")]
 #[test_case("cases/pdf_merge_false")]
+#[test_case("cases/merged_pdf_cross_links")]
 #[test_case("cases/script_injection")]
 #[test_case("cases/script_injection_no_css")]
 #[test_case("cases/relative_path_links")]
@@ -222,7 +226,7 @@ fn run_test_case(name: &str) {
                 update_html_references(test_name, &html_output, &project_path)
                     .expect("Failed to update HTML references");
             } else {
-                verify_html_output(test_name, &html_output);
+                verify_html_output(test_name, &html_output, test_case.is_single_file());
             }
         }
     }
@@ -1729,6 +1733,78 @@ fn test_rheo_var_non_string_error() {
     assert!(
         combined.contains("rheo-bad must be a string"),
         "Expected non-string rheo-* var error, got:\n{}",
+        combined
+    );
+}
+
+/// Error path: synthesized escape label collides with a user-authored label.
+///
+/// `content/a/file.typ` synthesizes escape `<a:file.typ>`. A second source
+/// hand-authors the same label at markup level. rheo should error before
+/// Typst compilation begins.
+#[test]
+fn test_escape_label_collision_error() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    let content_dir = project_path.join("content");
+    let sub_dir = content_dir.join("a");
+    std::fs::create_dir_all(&sub_dir).expect("Failed to create content/a");
+    let build_dir = project_path.join("build");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n\
+             content_dir = \"content\"\n\
+             \n\
+             [html.spine]\n\
+             title = \"Escape Collision Test\"\n\
+             vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+
+    // root.typ hand-authors <a:file.typ>, which is the escape alias rheo would
+    // synthesize for content/a/file.typ.
+    std::fs::write(
+        content_dir.join("root.typ"),
+        "= Root\n\nThis label conflicts with rheo's escape alias. <a:file.typ>\n",
+    )
+    .expect("Failed to write root.typ");
+
+    std::fs::write(
+        sub_dir.join("file.typ"),
+        "= File\n\nContent in subdirectory.\n",
+    )
+    .expect("Failed to write a/file.typ");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail on escape label collision"
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("a:file.typ") && combined.contains("collides"),
+        "Expected escape collision error, got:\n{}",
         combined
     );
 }

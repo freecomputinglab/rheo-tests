@@ -4,9 +4,9 @@ This is the second chapter.
 
 == Navigation
 
-Previous: #link("ch1.typ")[Chapter 1]
+Previous: #link(<chapters:ch1>)[Chapter 1]
 
-Root: #link("../intro.typ")[Introduction]
+Root: #link(<intro>)[Introduction]
 
 == Content
 

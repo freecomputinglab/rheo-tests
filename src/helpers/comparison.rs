@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use super::is_single_file_test;
 
-pub fn verify_html_output(test_name: &str, actual_dir: &Path) {
+pub fn verify_html_output(test_name: &str, actual_dir: &Path, is_single_file: bool) {
     let ref_dir = get_reference_dir(actual_dir, test_name, "html");
     ensure_reference_exists(&ref_dir, test_name, "HTML");
 
@@ -20,6 +20,42 @@ pub fn verify_html_output(test_name: &str, actual_dir: &Path) {
         let actual_file = actual_dir.join(rel_path);
         compare_html_content(entry.path(), &actual_file, test_name).expect("HTML content mismatch");
     });
+
+    assert_no_typ_hrefs(actual_dir, test_name, is_single_file);
+}
+
+fn assert_no_typ_hrefs(actual_dir: &Path, test_name: &str, is_single_file: bool) {
+    if is_single_file {
+        return;
+    }
+    // Fragment links (./file.typ#section) need dedicated support; deferred.
+    if test_name.contains("links_with_fragments") {
+        return;
+    }
+    let mut dead_hrefs: Vec<String> = Vec::new();
+    for_each_file_with_ext(actual_dir, "html", |entry| {
+        if let Ok(content) = fs::read_to_string(entry.path()) {
+            let mut pos = 0;
+            while let Some(rel) = content[pos..].find("href=\"") {
+                let href_start = pos + rel + 6;
+                if let Some(end) = content[href_start..].find('"') {
+                    let href = &content[href_start..href_start + end];
+                    if href.ends_with(".typ") || href.contains(".typ#") {
+                        dead_hrefs.push(format!("{}: {}", entry.path().display(), href));
+                    }
+                    pos = href_start + end + 1;
+                } else {
+                    break;
+                }
+            }
+        }
+    });
+    if !dead_hrefs.is_empty() {
+        panic!(
+            "Dead .typ hrefs in HTML output (migrate to #link(<handle>)):\n{}",
+            dead_hrefs.join("\n")
+        );
+    }
 }
 
 pub fn verify_pdf_output(test_name: &str, actual_dir: &Path) {
@@ -315,10 +351,14 @@ fn validate_binary_file_from_metadata(
         // CSS paths are stored as build-relative directly; other binary files
         // store a repo-relative path that needs the first 2 components stripped.
         let build_relative_path = if metadata.filetype == "css" {
-            metadata.path.as_ref().map(PathBuf::from).unwrap_or_else(|| {
-                let file_str = metadata_file.to_string_lossy();
-                PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-            })
+            metadata
+                .path
+                .as_ref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    let file_str = metadata_file.to_string_lossy();
+                    PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
+                })
         } else {
             metadata
                 .path
@@ -381,10 +421,14 @@ fn build_expected_files_set(
             && let Ok(metadata) = serde_json::from_str::<BinaryFileMetadata>(&json_str)
         {
             let build_relative_path = if metadata.filetype == "css" {
-                metadata.path.as_ref().map(PathBuf::from).unwrap_or_else(|| {
-                    let file_str = metadata_file.to_string_lossy();
-                    PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-                })
+                metadata
+                    .path
+                    .as_ref()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        let file_str = metadata_file.to_string_lossy();
+                        PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
+                    })
             } else {
                 metadata
                     .path

@@ -4,4 +4,4 @@
 
 This is the first chapter.
 
-See also: #link("./chapter2.typ")[Chapter 2] for more information.
+See also: #link(<chapter2>)[Chapter 2] for more information.

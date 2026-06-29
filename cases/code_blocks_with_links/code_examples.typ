@@ -4,9 +4,9 @@ This document tests that link transformation correctly handles code blocks.
 
 == Real Links
 
-Real links should be transformed: #link("./other.typ")[see other page].
+Real links should be transformed: #link(<other>)[see other page].
 
-Multiple links: #link("./intro.typ")[intro] and #link("./conclusion.typ")[conclusion].
+Multiple links: #link(<intro>)[intro] and #link(<conclusion>)[conclusion].
 
 == Code Examples
 
@@ -20,8 +20,8 @@ Code block example:
 
 == Mixed Content
 
-Real link: #link("./chapter1.typ")[Chapter 1]
+Real link: #link(<chapter1>)[Chapter 1]
 
 Then code: `#link("./code.typ")[code link]`
 
-And another real link: #link("./chapter2.typ")[Chapter 2]
+And another real link: #link(<chapter2>)[Chapter 2]

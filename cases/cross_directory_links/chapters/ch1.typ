@@ -4,8 +4,8 @@ This is the first chapter.
 
 == References
 
-Go back to #link("../intro.typ")[the introduction].
+Go back to #link(<intro>)[the introduction].
 
-Continue to #link("ch2.typ")[Chapter 2] (sibling).
+Continue to #link(<chapters:ch2>)[Chapter 2] (sibling).
 
-See #link("../appendix/notes.typ")[the appendix notes] for additional info.
+See #link(<appendix:notes>)[the appendix notes] for additional info.

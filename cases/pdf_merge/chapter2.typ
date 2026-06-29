@@ -2,6 +2,4 @@
 
 Second chapter content.
 
-Refer back to #link("./chapter1.typ")[Chapter 1].
-
-Jump to #link("./conclusion.typ")[Conclusion].
+Refer back to Chapter 1. See also Conclusion.

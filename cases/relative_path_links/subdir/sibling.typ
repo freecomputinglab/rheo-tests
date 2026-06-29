@@ -4,11 +4,11 @@ This is the sibling document in the subdirectory.
 
 == Link to Sibling
 
-Go to #link("child.typ")[the child document].
+Go to #link(<subdir:child>)[the child document].
 
 == Link to Parent Directory
 
-Return to #link("../root.typ")[root].
+Return to #link(<root>)[root].
 
 == Content
 

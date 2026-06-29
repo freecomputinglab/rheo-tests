@@ -2,4 +2,4 @@
 
 This filename contains a dot in the name (not just the extension).
 
-Back to #link("main.typ")[main].
+Back to #link(<main>)[main].
