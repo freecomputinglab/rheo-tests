@@ -1307,12 +1307,19 @@ fn test_atom_feed_and_rheo_vars() {
     )
     .expect("Failed to write b.typ");
 
-    // c.typ: no rheo-* vars → excluded from feed
+    // c.typ: no rheo-* vars → still included; title defaults to the filename ("C")
     std::fs::write(
         project_path.join("c.typ"),
         "= Article C\n\nNo feed metadata.\n",
     )
     .expect("Failed to write c.typ");
+
+    // d.typ: opts out via the boolean rheo-feed-exclude → excluded from feed
+    std::fs::write(
+        project_path.join("d.typ"),
+        "#set document(title: [Article D])\n#let rheo-feed-exclude = true\n\n= Article D\n\nExcluded.\n",
+    )
+    .expect("Failed to write d.typ");
 
     // rheo.toml with html spine + feed_base_url
     std::fs::write(
@@ -1323,7 +1330,7 @@ fn test_atom_feed_and_rheo_vars() {
              \n\
              [html.spine]\n\
              title = \"Test Blog\"\n\
-             vertebrae = [\"a.typ\", \"b.typ\", \"c.typ\"]\n\
+             vertebrae = [\"a.typ\", \"b.typ\", \"c.typ\", \"d.typ\"]\n\
              \n\
              [html]\n\
              feed_base_url = \"https://example.com\"\n",
@@ -1371,13 +1378,28 @@ fn test_atom_feed_and_rheo_vars() {
         "feed self link wrong"
     );
 
-    // Exactly two entries (c.typ excluded)
+    // Three entries: a, b, c included by default; d opted out via rheo-feed-exclude.
     let entry_count = feed.matches("<entry>").count();
-    assert_eq!(entry_count, 2, "expected 2 entries, got {}", entry_count);
+    assert_eq!(entry_count, 3, "expected 3 entries, got {}", entry_count);
 
     // Entry content
     assert!(feed.contains("<title>Article A</title>"), "entry A missing");
     assert!(feed.contains("<title>Article B</title>"), "entry B missing");
+    // c.typ has no rheo-feed-title; its entry title defaults to the filename.
+    assert!(
+        feed.contains("<title>C</title>"),
+        "entry C (default title) missing"
+    );
+    // d.typ opted out with the boolean rheo-feed-exclude → no entry.
+    assert!(
+        !feed.contains("Article D") && !feed.contains(r#"href="https://example.com/d.html""#),
+        "excluded vertebra d leaked into feed"
+    );
+    // ...but d.typ's HTML page is still generated.
+    assert!(
+        build_dir.join("html/d.html").exists(),
+        "d.html page should still be built"
+    );
     assert!(
         feed.contains(r#"href="https://example.com/a.html""#),
         "entry A alternate link wrong"
