@@ -8,4 +8,4 @@ feed_title = "Feed Document Defaults"
 
 [html.spine]
 title = "Feed Document Defaults"
-vertebrae = ["defaults.typ", "overrides.typ"]
+vertebrae = ["defaults.typ", "overrides.typ", "excluded.typ"]
