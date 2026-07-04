@@ -20,6 +20,7 @@ use std::path::PathBuf;
 #[test_case("cases/cross_directory_label_collision")]
 #[test_case("cases/cross_directory_links")]
 #[test_case("cases/bundle_ref_cross_directory")]
+#[test_case("cases/feed_document_defaults")]
 #[test_case("cases/epub_inferred_spine")]
 #[test_case("cases/link_path_edge_cases")]
 #[test_case("cases/link_transformation")]
