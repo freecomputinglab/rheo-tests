@@ -1,0 +1,18 @@
+version = "0.4.0"
+formats = ["html", "pdf", "epub"]
+
+# rheo-context must be injected for every format's bundle, not just HTML.
+# Each vertebra below uses rheo-context, so a missing variable would fail the
+# pdf/epub compile — this fixture guards against html-only injection.
+
+[html.spine]
+title = "rheo-context all formats"
+vertebrae = ["a.typ", "b.typ"]
+
+[pdf.spine]
+title = "rheo-context all formats"
+vertebrae = ["a.typ", "b.typ"]
+
+[epub.spine]
+title = "rheo-context all formats"
+vertebrae = ["a.typ", "b.typ"]
