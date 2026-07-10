@@ -1,5 +1,5 @@
 use ntest::test_case;
-use rheo_core::{RheoConfig, project::ProjectConfig};
+use rheo_core::{RheoConfig, config::project::ProjectConfig};
 use rheo_tests::helpers::{
     cli::rheo_cli_command,
     comparison::{verify_epub_output, verify_html_output, verify_pdf_output},
@@ -1777,9 +1777,14 @@ fn test_escape_label_collision_error() {
     std::fs::write(
         project_path.join("rheo.toml"),
         format!(
+            // prefix_labels=false: this error path tests a user-authored label
+            // colliding with a synthesized escape alias. Under default prefixing
+            // the user label is namespaced (<root:a:file.typ>) and never collides,
+            // so the collision is only reachable with prefixing disabled.
             "version = \"{}\"\n\
              formats = [\"html\"]\n\
              content_dir = \"content\"\n\
+             prefix_labels = false\n\
              \n\
              [html.spine]\n\
              title = \"Escape Collision Test\"\n\
