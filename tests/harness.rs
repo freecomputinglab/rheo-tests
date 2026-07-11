@@ -1143,6 +1143,84 @@ fn test_asset_multiple_blocks_inject_all() {
     );
 }
 
+/// Verify the output format is exposed on `sys.inputs.rheo-context.target`
+/// (per-format value) and that the removed `sys.inputs.rheo-target` key is gone.
+///
+/// Companion to the `is-rheo-*` helper coverage; this asserts the raw context
+/// field and the key removal directly. See rheo epic `rheo-tgt-epic-714`.
+#[test]
+fn test_rheo_context_target_and_no_legacy_key() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+
+    // A single vertebra renders the raw context target and probes the old key.
+    std::fs::write(
+        project_path.join("page.typ"),
+        "ctxtarget=#sys.inputs.rheo-context.target\n\n\
+         oldkey=#{ if \"rheo-target\" in sys.inputs { \"present\" } else { \"absent\" } }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\", \"epub\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // HTML build: target == "html", legacy key absent.
+    let html = std::fs::read_to_string(build_dir.join("html/page.html")).unwrap();
+    assert!(
+        html.contains("ctxtarget=html"),
+        "html should expose rheo-context.target == html:\n{html}"
+    );
+    assert!(
+        html.contains("oldkey=absent"),
+        "sys.inputs.rheo-target must be absent (oldkey=absent) in html:\n{html}"
+    );
+
+    // EPUB build: same probes, target == "epub". EPUB packs into a .epub zip,
+    // so extract its xhtml entries and search their combined text.
+    let epub_file = std::fs::read_dir(build_dir.join("epub"))
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.extension().and_then(|s| s.to_str()) == Some("epub"))
+        .expect("no .epub produced");
+    let xhtml: String = rheo_tests::helpers::comparison::extract_epub_xhtml(&epub_file)
+        .expect("extract epub xhtml")
+        .into_values()
+        .collect();
+    assert!(
+        xhtml.contains("ctxtarget=epub"),
+        "epub should expose rheo-context.target == epub:\n{xhtml}"
+    );
+    assert!(
+        xhtml.contains("oldkey=absent"),
+        "sys.inputs.rheo-target must be absent (oldkey=absent) in epub:\n{xhtml}"
+    );
+}
+
 /// Test that a merged spine with a missing relative import produces a clear error
 /// referencing the original source file path (not a temp path).
 #[test]
