@@ -50,6 +50,7 @@ use std::path::PathBuf;
 #[test_case("cases/rheo_package_slides")]
 #[test_case("cases/math")]
 #[test_case("cases/rheo_context_spine")]
+#[test_case("cases/rheo_context_sys_inputs")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
 #[test_case("cases/atom_feed_basic")]
