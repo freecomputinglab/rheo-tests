@@ -1,0 +1,11 @@
+{
+  "filetype": "epub",
+  "file_size": 3196,
+  "title": "rheo-context all formats",
+  "language": "en",
+  "spine_files": [
+    "a.xhtml",
+    "b.xhtml"
+  ],
+  "has_nav": true
+}

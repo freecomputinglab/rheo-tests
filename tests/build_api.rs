@@ -2,8 +2,8 @@
 //! plugins, with no CLI involvement — the library entry point introduced when the
 //! orchestrator moved out of `crates/cli`.
 
-use rheo_core::manifest_version;
-use rheo_core::project::ProjectConfig;
+use rheo_core::config::manifest_version;
+use rheo_core::config::project::ProjectConfig;
 use rheo_core::{Build, BuildOptions};
 use std::fs;
 use tempfile::TempDir;
