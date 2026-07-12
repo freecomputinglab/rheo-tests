@@ -46,6 +46,8 @@ use std::path::PathBuf;
 #[test_case("cases/error_formatting/invalid_field.typ")]
 #[test_case("cases/error_formatting/multiple_errors.typ")]
 #[test_case("cases/error_formatting/array_index_error.typ")]
+#[test_case("cases/removed_rheo_target_helper.typ")]
+#[test_case("cases/removed_is_rheo_helpers.typ")]
 #[test_case("cases/merged_subdir_imports")]
 #[test_case("cases/rheo_package_slides")]
 #[test_case("cases/math")]
@@ -1143,6 +1145,95 @@ fn test_asset_multiple_blocks_inject_all() {
     );
 }
 
+/// Verify the output format is exposed on `sys.inputs.rheo-context.target`
+/// (per-format value) and that the removed `sys.inputs.rheo-target` key is gone.
+///
+/// Companion to the `is-rheo-*` helper coverage; this asserts the raw context
+/// field and the key removal directly. See rheo epic `rheo-tgt-epic-714`.
+#[test]
+fn test_rheo_context_target_and_no_legacy_key() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+
+    // A single vertebra renders the raw context target and probes the old key.
+    std::fs::write(
+        project_path.join("page.typ"),
+        "ctxtarget=#sys.inputs.rheo-context.target\n\n\
+         pretarget=#rheo-context.target\n\n\
+         oldkey=#{ if \"rheo-target\" in sys.inputs { \"present\" } else { \"absent\" } }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\", \"epub\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // HTML build: target == "html", legacy key absent.
+    let html = std::fs::read_to_string(build_dir.join("html/page.html")).unwrap();
+    assert!(
+        html.contains("ctxtarget=html"),
+        "html should expose rheo-context.target == html:\n{html}"
+    );
+    // Per-vertebra `#let rheo-context` prelude carries the same target.
+    assert!(
+        html.contains("pretarget=html"),
+        "html prelude rheo-context.target must == html:\n{html}"
+    );
+    assert!(
+        html.contains("oldkey=absent"),
+        "sys.inputs.rheo-target must be absent (oldkey=absent) in html:\n{html}"
+    );
+
+    // EPUB build: same probes, target == "epub". EPUB packs into a .epub zip,
+    // so extract its xhtml entries and search their combined text.
+    let epub_file = std::fs::read_dir(build_dir.join("epub"))
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.extension().and_then(|s| s.to_str()) == Some("epub"))
+        .expect("no .epub produced");
+    let xhtml: String = rheo_tests::helpers::comparison::extract_epub_xhtml(&epub_file)
+        .expect("extract epub xhtml")
+        .into_values()
+        .collect();
+    assert!(
+        xhtml.contains("ctxtarget=epub"),
+        "epub should expose rheo-context.target == epub:\n{xhtml}"
+    );
+    // Per-vertebra `#let rheo-context` prelude carries the same target.
+    assert!(
+        xhtml.contains("pretarget=epub"),
+        "epub prelude rheo-context.target must == epub:\n{xhtml}"
+    );
+    assert!(
+        xhtml.contains("oldkey=absent"),
+        "sys.inputs.rheo-target must be absent (oldkey=absent) in epub:\n{xhtml}"
+    );
+}
+
 /// Test that a merged spine with a missing relative import produces a clear error
 /// referencing the original source file path (not a temp path).
 #[test]
@@ -1319,5 +1410,57 @@ fn migrate_rewrites_links() {
     assert!(
         !toml.contains("0.3.1"),
         "rheo.toml version should have been bumped:\n{toml}"
+    );
+}
+
+/// `rheo migrate --apply` rewrites the three removed-`rheo-target` reference
+/// forms (rheo PR #150) onto the `rheo-context.target` surface, leaving no
+/// residual `rheo-target` literal.
+#[test]
+fn migrate_rewrites_target() {
+    let test_case = TestCase::new("cases/migrate_target_syntax");
+    let original_project_path = test_case.project_path();
+
+    // Migrate mutates the project in place, so operate on an isolated copy.
+    let test_store = PathBuf::from("store").join("migrate_target_syntax");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let page = std::fs::read_to_string(test_store.join("page.typ")).expect("read page.typ");
+
+    // rheo-target()  ->  target()
+    assert!(
+        page.contains("#target()") && !page.contains("rheo-target()"),
+        "rheo-target() call not rewritten to target():\n{page}"
+    );
+    // "rheo-target" in sys.inputs  ->  guarded rheo-context form
+    assert!(
+        page.contains("\"rheo-context\" in sys.inputs and \"target\" in sys.inputs.rheo-context"),
+        "\"rheo-target\" in sys.inputs probe not rewritten:\n{page}"
+    );
+    // sys.inputs.rheo-target  ->  sys.inputs.rheo-context.target
+    assert!(
+        page.contains("sys.inputs.rheo-context.target"),
+        "sys.inputs.rheo-target read not rewritten:\n{page}"
+    );
+    // No residual `rheo-target` literal anywhere.
+    assert!(
+        !page.contains("rheo-target"),
+        "residual rheo-target literal remains:\n{page}"
     );
 }

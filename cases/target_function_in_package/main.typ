@@ -14,7 +14,7 @@
 //
 // For package authors:
 // - Packages can adopt rheo's pattern to detect rheo output format
-// - The pattern: `if "rheo-target" in sys.inputs { sys.inputs.rheo-target } else { target() }`
+// - The pattern: `if "rheo-context" in sys.inputs { sys.inputs.rheo-context.target } else { target() }`
 // - This provides graceful degradation when compiled outside rheo
 
 #import "@preview/bullseye:0.1.0": on-target
