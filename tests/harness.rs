@@ -1157,6 +1157,7 @@ fn test_rheo_context_target_and_no_legacy_key() {
     std::fs::write(
         project_path.join("page.typ"),
         "ctxtarget=#sys.inputs.rheo-context.target\n\n\
+         pretarget=#rheo-context.target\n\n\
          oldkey=#{ if \"rheo-target\" in sys.inputs { \"present\" } else { \"absent\" } }\n",
     )
     .unwrap();
@@ -1195,6 +1196,11 @@ fn test_rheo_context_target_and_no_legacy_key() {
         html.contains("ctxtarget=html"),
         "html should expose rheo-context.target == html:\n{html}"
     );
+    // Per-vertebra `#let rheo-context` prelude carries the same target.
+    assert!(
+        html.contains("pretarget=html"),
+        "html prelude rheo-context.target must == html:\n{html}"
+    );
     assert!(
         html.contains("oldkey=absent"),
         "sys.inputs.rheo-target must be absent (oldkey=absent) in html:\n{html}"
@@ -1214,6 +1220,11 @@ fn test_rheo_context_target_and_no_legacy_key() {
     assert!(
         xhtml.contains("ctxtarget=epub"),
         "epub should expose rheo-context.target == epub:\n{xhtml}"
+    );
+    // Per-vertebra `#let rheo-context` prelude carries the same target.
+    assert!(
+        xhtml.contains("pretarget=epub"),
+        "epub prelude rheo-context.target must == epub:\n{xhtml}"
     );
     assert!(
         xhtml.contains("oldkey=absent"),
