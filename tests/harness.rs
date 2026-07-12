@@ -46,6 +46,8 @@ use std::path::PathBuf;
 #[test_case("cases/error_formatting/invalid_field.typ")]
 #[test_case("cases/error_formatting/multiple_errors.typ")]
 #[test_case("cases/error_formatting/array_index_error.typ")]
+#[test_case("cases/removed_rheo_target_helper.typ")]
+#[test_case("cases/removed_is_rheo_helpers.typ")]
 #[test_case("cases/merged_subdir_imports")]
 #[test_case("cases/rheo_package_slides")]
 #[test_case("cases/math")]
