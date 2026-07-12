@@ -1412,3 +1412,55 @@ fn migrate_rewrites_links() {
         "rheo.toml version should have been bumped:\n{toml}"
     );
 }
+
+/// `rheo migrate --apply` rewrites the three removed-`rheo-target` reference
+/// forms (rheo PR #150) onto the `rheo-context.target` surface, leaving no
+/// residual `rheo-target` literal.
+#[test]
+fn migrate_rewrites_target() {
+    let test_case = TestCase::new("cases/migrate_target_syntax");
+    let original_project_path = test_case.project_path();
+
+    // Migrate mutates the project in place, so operate on an isolated copy.
+    let test_store = PathBuf::from("store").join("migrate_target_syntax");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let page = std::fs::read_to_string(test_store.join("page.typ")).expect("read page.typ");
+
+    // rheo-target()  ->  target()
+    assert!(
+        page.contains("#target()") && !page.contains("rheo-target()"),
+        "rheo-target() call not rewritten to target():\n{page}"
+    );
+    // "rheo-target" in sys.inputs  ->  guarded rheo-context form
+    assert!(
+        page.contains("\"rheo-context\" in sys.inputs and \"target\" in sys.inputs.rheo-context"),
+        "\"rheo-target\" in sys.inputs probe not rewritten:\n{page}"
+    );
+    // sys.inputs.rheo-target  ->  sys.inputs.rheo-context.target
+    assert!(
+        page.contains("sys.inputs.rheo-context.target"),
+        "sys.inputs.rheo-target read not rewritten:\n{page}"
+    );
+    // No residual `rheo-target` literal anywhere.
+    assert!(
+        !page.contains("rheo-target"),
+        "residual rheo-target literal remains:\n{page}"
+    );
+}
