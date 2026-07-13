@@ -1,0 +1,4 @@
+version = "0.4.0"
+# Zero-config directory-scan spine: no [spine] table at all, so the spine is
+# built purely from the on-disk layout (see reticulate/spine.rs SpineScan).
+formats = ["html"]
