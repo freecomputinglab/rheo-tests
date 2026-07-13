@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Migrate Target Syntax"
-vertebrae = ["page.typ"]

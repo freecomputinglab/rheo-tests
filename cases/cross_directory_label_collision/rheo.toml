@@ -4,4 +4,3 @@ content_dir = "content"
 
 [html.spine]
 title = "Cross Directory Label Collision Test"
-vertebrae = ["intro.typ", "a/notes.typ", "b/notes.typ"]

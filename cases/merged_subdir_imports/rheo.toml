@@ -4,9 +4,7 @@ formats = ["pdf", "epub"]
 
 [pdf.spine]
 title = "Merged Subdir Imports"
-vertebrae = ["content/**/*.typ"]
 merge = true
 
 [epub.spine]
 title = "Merged Subdir Imports"
-vertebrae = ["content/**/*.typ"]

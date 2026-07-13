@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Migrate Link Syntax"
-vertebrae = ["a.typ", "b.typ"]

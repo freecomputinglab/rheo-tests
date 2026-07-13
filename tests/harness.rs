@@ -49,9 +49,14 @@ use std::path::PathBuf;
 #[test_case("cases/removed_rheo_target_helper.typ")]
 #[test_case("cases/removed_is_rheo_helpers.typ")]
 #[test_case("cases/merged_subdir_imports")]
+#[test_case("cases/spine_field_level_merge")]
 #[test_case("cases/rheo_package_slides")]
 #[test_case("cases/math")]
 #[test_case("cases/rheo_context_spine")]
+#[test_case("cases/spine_scan_tree")]
+#[test_case("cases/spine_exclude")]
+#[test_case("cases/spine_sections")]
+#[test_case("cases/spine_performat")]
 #[test_case("cases/rheo_context_sys_inputs")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
@@ -1366,6 +1371,61 @@ fn test_escape_label_collision_error() {
     );
 }
 
+/// Error path: a `[[spine.section]]` whose `include` glob matches no files
+/// should fail the build, naming the offending section
+/// (see reticulate/spine.rs SpineScan::build_section_nodes).
+#[test]
+fn test_spine_section_no_match_error() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    let build_dir = project_path.join("build");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n\
+             \n\
+             [[spine.section]]\n\
+             name = \"ghost\"\n\
+             include = [\"nope.typ\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+
+    std::fs::write(project_path.join("intro.typ"), "= Intro\n\nContent.\n")
+        .expect("Failed to write intro.typ");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail when a spine section's include matches no files"
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("ghost") && combined.contains("matched no files"),
+        "Expected error naming the empty spine section, got:\n{}",
+        combined
+    );
+}
+
 /// `rheo migrate --apply` rewrites pre-0.4.0 cross-file link syntax
 /// (`#link("./file.typ")`) to the handle form (`#link(<handle>)`), leaves
 /// external URLs untouched, and bumps the project's `rheo.toml` version.
@@ -1462,5 +1522,71 @@ fn migrate_rewrites_target() {
     assert!(
         !page.contains("rheo-target"),
         "residual rheo-target literal remains:\n{page}"
+    );
+}
+
+/// `rheo migrate --apply` converts a retired `vertebrae` inclusion-filter into
+/// an equivalent `[spine] exclude`, so a helper-only `.typ` file that the old
+/// glob list deliberately never named doesn't silently start getting published
+/// as a spine page under the new directory-scan-by-default model (rheo-9vl.1 /
+/// rheo-9vl.3).
+#[test]
+fn migrate_converts_vertebrae_to_exclude() {
+    let test_case = TestCase::new("cases/migrate_vertebrae_exclude");
+    let original_project_path = test_case.project_path();
+
+    let test_store = PathBuf::from("store").join("migrate_vertebrae_exclude");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    // Dry run first: must not write anything, but should mention the
+    // vertebrae -> exclude conversion it would make.
+    let dry_run_output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap()])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate (dry run)");
+    assert!(
+        dry_run_output.status.success(),
+        "migrate dry run failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&dry_run_output.stderr),
+        String::from_utf8_lossy(&dry_run_output.stdout),
+    );
+    let dry_run_stdout = String::from_utf8_lossy(&dry_run_output.stdout);
+    assert!(
+        dry_run_stdout.contains("vertebrae") && dry_run_stdout.contains("exclude"),
+        "dry run did not describe the vertebrae -> exclude conversion:\n{dry_run_stdout}"
+    );
+    let toml_before =
+        std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    assert!(
+        toml_before.contains("vertebrae"),
+        "dry run must not write; rheo.toml already missing vertebrae:\n{toml_before}"
+    );
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate --apply");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let toml_after =
+        std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    assert!(
+        !toml_after.contains("vertebrae"),
+        "vertebrae key not removed by migration:\n{toml_after}"
+    );
+    assert!(
+        toml_after.contains("exclude") && toml_after.contains("lib"),
+        "no equivalent [spine] exclude for the lib/ helper added:\n{toml_after}"
     );
 }

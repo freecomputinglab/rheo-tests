@@ -7,5 +7,4 @@ formats = ["pdf"]
 
 [pdf.spine]
 merge = true
-vertebrae = ["intro.typ", "chapter.typ", "appendix/notes.typ"]
 title = "Merged PDF Cross Links"

@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "rheo-context sys.inputs"
-vertebrae = ["intro.typ", "chapters/one.typ"]

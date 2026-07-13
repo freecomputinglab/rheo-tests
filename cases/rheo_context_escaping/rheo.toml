@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "rheo-context escaping"
-vertebrae = ["quoted.typ", "reader.typ"]

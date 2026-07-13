@@ -3,4 +3,3 @@ formats = ["html", "epub"]
 
 [html.spine]
 title = "Math Test"
-vertebrae = ["main.typ"]

@@ -3,7 +3,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Test Blog"
-vertebrae = ["a.typ", "b.typ", "c.typ", "d.typ"]
 
 [html]
 feed_base_url = "https://example.com"

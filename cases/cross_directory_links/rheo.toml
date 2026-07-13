@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Cross Directory Test"
-vertebrae = ["intro.typ", "chapters/ch1.typ", "chapters/ch2.typ", "appendix/notes.typ"]

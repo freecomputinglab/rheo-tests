@@ -7,4 +7,3 @@ feed_title = "Bundle Ref Test Feed"
 
 [html.spine]
 title = "Bundle Cross-Directory Test"
-vertebrae = ["intro.typ", "chapters/intro.typ", "chapters/ch1.typ"]

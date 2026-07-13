@@ -4,6 +4,3 @@ content_dir = "content"
 
 [html]
 feed_base_url = "https://example.com"
-
-[html.spine]
-vertebrae = ["post-*.typ"]

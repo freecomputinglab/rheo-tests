@@ -1,0 +1,11 @@
+version = "0.4.0"
+formats = ["html"]
+
+[[spine.section]]
+name = "guide"
+title = "Getting Started"
+include = ["intro.typ", "setup.typ"]
+
+[[spine.section.section]]
+name = "advanced"
+include = ["tuning.typ"]

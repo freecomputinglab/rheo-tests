@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Link Transformation Test"
-vertebrae = ["doc1.typ", "doc2.typ"]

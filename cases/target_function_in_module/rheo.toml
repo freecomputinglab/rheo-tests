@@ -1,5 +1,8 @@
 formats = ["html", "pdf", "epub"]
 
+[spine]
+exclude = ["lib/**"]
+
 [epub.spine]
 title = "Target Function in Module"
-vertebrae = ["main.typ"]
+exclude = ["lib/**"]
