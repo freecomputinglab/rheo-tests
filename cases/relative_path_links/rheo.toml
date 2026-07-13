@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Relative Path Test"
-vertebrae = ["root.typ", "subdir/child.typ", "subdir/sibling.typ"]

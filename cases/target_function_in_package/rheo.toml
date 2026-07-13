@@ -2,4 +2,3 @@ formats = ["html", "epub"]
 
 [epub.spine]
 title = "Target Function in Package"
-vertebrae = ["main.typ"]

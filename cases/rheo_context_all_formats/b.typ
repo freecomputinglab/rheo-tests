@@ -2,4 +2,4 @@
 
 = #rheo-context.handle
 
-This is #rheo-context.handle of #rheo-context.spine.len() pages.
+This is #rheo-context.handle of #rheo-context.spine-flat.len() pages.

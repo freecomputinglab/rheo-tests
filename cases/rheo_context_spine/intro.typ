@@ -2,8 +2,8 @@
 
 Handle: #rheo-context.handle
 
-Spine handles: #rheo-context.spine.map(v => v.handle).join(", ")
+Spine handles: #rheo-context.spine-flat.map(v => v.handle).join(", ")
 
-Spine paths: #rheo-context.spine.map(v => v.path).join(", ")
+Spine paths: #rheo-context.spine-flat.map(v => v.path).join(", ")
 
-Pages: #rheo-context.spine.len()
+Pages: #rheo-context.spine-flat.len()

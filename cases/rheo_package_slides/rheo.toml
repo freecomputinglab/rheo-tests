@@ -3,4 +3,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Rheo Package Slides"
-vertebrae = ["main.typ"]

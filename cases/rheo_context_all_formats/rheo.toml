@@ -7,12 +7,9 @@ formats = ["html", "pdf", "epub"]
 
 [html.spine]
 title = "rheo-context all formats"
-vertebrae = ["a.typ", "b.typ"]
 
 [pdf.spine]
 title = "rheo-context all formats"
-vertebrae = ["a.typ", "b.typ"]
 
 [epub.spine]
 title = "rheo-context all formats"
-vertebrae = ["a.typ", "b.typ"]

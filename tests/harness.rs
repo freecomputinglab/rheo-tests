@@ -49,6 +49,7 @@ use std::path::PathBuf;
 #[test_case("cases/removed_rheo_target_helper.typ")]
 #[test_case("cases/removed_is_rheo_helpers.typ")]
 #[test_case("cases/merged_subdir_imports")]
+#[test_case("cases/spine_field_level_merge")]
 #[test_case("cases/rheo_package_slides")]
 #[test_case("cases/math")]
 #[test_case("cases/rheo_context_spine")]

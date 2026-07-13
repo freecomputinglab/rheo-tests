@@ -4,4 +4,3 @@ formats = ["html"]
 
 [html.spine]
 title = "Code Blocks with Links Test"
-vertebrae = ["code_examples.typ", "other.typ", "intro.typ", "conclusion.typ", "chapter1.typ", "chapter2.typ"]
