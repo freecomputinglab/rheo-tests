@@ -54,6 +54,9 @@ use std::path::PathBuf;
 #[test_case("cases/math")]
 #[test_case("cases/rheo_context_spine")]
 #[test_case("cases/spine_scan_tree")]
+#[test_case("cases/spine_exclude")]
+#[test_case("cases/spine_sections")]
+#[test_case("cases/spine_performat")]
 #[test_case("cases/rheo_context_sys_inputs")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
@@ -1364,6 +1367,61 @@ fn test_escape_label_collision_error() {
     assert!(
         combined.contains("a:file.typ") && combined.contains("collides"),
         "Expected escape collision error, got:\n{}",
+        combined
+    );
+}
+
+/// Error path: a `[[spine.section]]` whose `include` glob matches no files
+/// should fail the build, naming the offending section
+/// (see reticulate/spine.rs SpineScan::build_section_nodes).
+#[test]
+fn test_spine_section_no_match_error() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    let build_dir = project_path.join("build");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n\
+             \n\
+             [[spine.section]]\n\
+             name = \"ghost\"\n\
+             include = [\"nope.typ\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+
+    std::fs::write(project_path.join("intro.typ"), "= Intro\n\nContent.\n")
+        .expect("Failed to write intro.typ");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail when a spine section's include matches no files"
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("ghost") && combined.contains("matched no files"),
+        "Expected error naming the empty spine section, got:\n{}",
         combined
     );
 }
