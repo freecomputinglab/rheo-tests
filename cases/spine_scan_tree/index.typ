@@ -52,6 +52,25 @@ reference) if the zero-config directory-scan spine ever changes shape.
   // guide:a, guide:b, guide:deep:x, index, intro = 7. Groups (guide/deep,
   // 01-basics) are excluded.
   assert(rheo-context.spine-flat.len() == 7, message: "expected 7 clickable vertebrae in spine-flat")
+
+  // Pin the exact pre-order SEQUENCE, not just the count. Pre-order means a
+  // directory's own landing page (e.g. `guide`) is emitted BEFORE its
+  // children (`guide:a`, `guide:b`, `guide:deep:x`) — group nodes (01-basics,
+  // guide/deep) contribute no entry of their own but still recurse into their
+  // children in place. This differs from a flat full-path lexicographic sort,
+  // which would put `guide` after all of its children.
+  assert(
+    rheo-context.spine-flat.map(v => v.handle) == (
+      "01-basics:setup",
+      "guide",
+      "guide:a",
+      "guide:b",
+      "guide:deep:x",
+      "index",
+      "intro",
+    ),
+    message: "spine-flat pre-order sequence changed: " + rheo-context.spine-flat.map(v => v.handle).join(", "),
+  )
 }
 
 Spine-flat count: #rheo-context.spine-flat.len()
