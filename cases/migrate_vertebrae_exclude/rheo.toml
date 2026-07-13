@@ -1,0 +1,6 @@
+version = "0.3.1"
+formats = ["epub"]
+
+[epub.spine]
+title = "Migrate Vertebrae Exclude"
+vertebrae = ["main.typ"]
