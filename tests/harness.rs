@@ -911,6 +911,15 @@ fn test_rheo_init_and_compile() {
 
     // Verify expected files exist
     assert!(test_dir.join("rheo.toml").exists(), "Missing rheo.toml");
+
+    let rheo_toml =
+        std::fs::read_to_string(test_dir.join("rheo.toml")).expect("Failed to read rheo.toml");
+    assert!(
+        !rheo_toml.contains("vertebrae"),
+        "rheo.toml should not contain the retired 'vertebrae' key:\n{}",
+        rheo_toml
+    );
+
     assert!(test_dir.join("style.css").exists(), "Missing style.css");
     assert!(test_dir.join("index.js").exists(), "Missing index.js");
     assert!(
