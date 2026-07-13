@@ -92,6 +92,30 @@ pub fn run_compat(url: &str, name: &str) {
     let cloned_path = clone_repo(url, name);
     patch_rheo_version(&cloned_path);
 
+    let migrate_output = rheo_cli_command()
+        .args(["migrate", cloned_path.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to run rheo migrate: {}", e));
+
+    let migrate_stdout = String::from_utf8_lossy(&migrate_output.stdout);
+    let migrate_stderr = String::from_utf8_lossy(&migrate_output.stderr);
+    let migrate_combined = format!("{}\n{}", migrate_stdout, migrate_stderr);
+
+    if !migrate_output.status.success() {
+        panic!(
+            "rheo migrate --apply failed for {} ({}):\n{}",
+            name, url, migrate_combined
+        );
+    }
+
+    if migrate_combined.contains("ERROR") || migrate_combined.contains("error:") {
+        panic!(
+            "rheo migrate --apply for {} ({}) produced errors despite success exit code:\n{}",
+            name, url, migrate_combined
+        );
+    }
+
     let output = rheo_cli_command()
         .args(["compile", cloned_path.to_str().unwrap()])
         .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
