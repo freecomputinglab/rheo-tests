@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="alternate" type="application/atom+xml" title="Bundle Ref Test Feed" href="https://example.com/feed.xml"><title>Ch1</title><style>.header {
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="alternate" type="application/atom+xml" title="Bundle Ref Test Feed" href="https://example.com/feed.xml"><title>Intro</title><style>.header {
   max-height: 40px;
   display: flex;
   justify-content: center;
@@ -126,4 +126,4 @@ section[role="doc-endnotes"] ol li a[role="doc-backlink"] {
     font-size: 0.9em;
   }
 }
-</style></head><body><span id="loc-1"></span><h2>Chapter 1: The Beginning</h2><p>This is the first actual chapter content.</p><h3>References</h3><p>Reference back to <a href="chapters%3Aintro.html#intro">the root introduction</a> and <a href="chapters%3Aintro.html#loc-1">the nested introduction</a>.</p><p>Both work correctly: root-level files get bare handles, nested files get ‘:’-prefixed handles.</p><h3>Self Reference</h3><p>This chapter can be referenced as <a href="chapters:ch1.html">Chapter 1</a>.</p><h3>Content</h3><p>Some example chapter content here.</p></body></html>
+</style></head><body><h2>Chapter Introduction</h2><p>This is a nested introduction that shares the “intro” stem with the root-level intro.typ.</p><h3>Handle Scheme</h3><p>rheo assigns handles based on path:</p><ul><li>Root files: bare handle <span id="intro">(e.g.</span> )</li><li>Nested files: ‘:’-prefixed handle <span id="loc-1">(e.g.</span> )</li></ul><h3>Cross-References</h3><p>Link back to <a href="#intro">the root introduction</a> using the bare handle.</p><p>Reference <a href="../chapters/ch1.html">Chapter 1</a> in the same directory.</p><p>Continue to the <a href="../chapters/ch1.html">next chapter</a> for more content.</p></body></html>

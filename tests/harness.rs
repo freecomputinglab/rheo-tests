@@ -19,6 +19,7 @@ use std::path::PathBuf;
 #[test_case("cases/code_blocks_with_links")]
 #[test_case("cases/cross_directory_label_collision")]
 #[test_case("cases/cross_directory_links")]
+#[test_case("cases/nested_vertebra_href")]
 #[test_case("cases/bundle_ref_cross_directory")]
 #[test_case("cases/feed_document_defaults")]
 #[test_case("cases/epub_inferred_spine")]
@@ -1588,8 +1589,7 @@ fn migrate_converts_vertebrae_to_exclude() {
         String::from_utf8_lossy(&output.stdout),
     );
 
-    let toml_after =
-        std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
     assert!(
         !toml_after.contains("vertebrae"),
         "vertebrae key not removed by migration:\n{toml_after}"
