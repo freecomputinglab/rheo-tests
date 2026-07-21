@@ -64,6 +64,8 @@ use std::path::PathBuf;
 #[test_case("cases/spine_sections")]
 #[test_case("cases/spine_performat")]
 #[test_case("cases/rheo_context_sys_inputs")]
+#[test_case("cases/spine_document_metadata")]
+#[test_case("cases/document_title_string_form")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
 #[test_case("cases/atom_feed_basic")]
@@ -1605,4 +1607,56 @@ fn migrate_converts_vertebrae_to_exclude() {
         toml_after.contains("exclude") && toml_after.contains("lib"),
         "no equivalent [spine] exclude for the lib/ helper added:\n{toml_after}"
     );
+}
+
+/// The CLI warns — on an otherwise successful compile — when a document title
+/// loses content during the plain-text flattening used to build the spine.
+/// A styled title (`[_Italic_ Title]`) loses its emphasis; a string title does
+/// not. See rheo-m4w.
+#[test]
+fn test_lossy_document_title_warning() {
+    let project = "cases/document_title_lossy_warning";
+    let build_dir = PathBuf::from("store").join("document_title_lossy_warning_build");
+    let _ = std::fs::remove_dir_all(&build_dir);
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project,
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // rheo's tracing logs go to stdout; Typst diagnostics to stderr. Check both.
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        output.status.success(),
+        "compile should succeed despite the warning:\n{combined}"
+    );
+
+    // Exact user-facing message.
+    assert!(
+        combined.contains(
+            "Rheo uses document titles as unique identifiers, and does not retain \
+             styling or sophisticated forms of Typst content when constructing spines"
+        ),
+        "missing lossy-title warning message:\n{combined}"
+    );
+    // Shows the original title content (with markup) and the stripped form.
+    assert!(
+        combined.contains("_Italic_"),
+        "warning should show the original title content:\n{combined}"
+    );
+    assert!(
+        combined.contains("Italic Title"),
+        "warning should show the stripped title:\n{combined}"
+    );
+
+    let _ = std::fs::remove_dir_all(&build_dir);
 }
