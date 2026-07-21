@@ -20,6 +20,7 @@ use std::path::PathBuf;
 #[test_case("cases/cross_directory_label_collision")]
 #[test_case("cases/cross_directory_links")]
 #[test_case("cases/nested_vertebra_href")]
+#[test_case("cases/escape_form_nested")]
 #[test_case("cases/deep_nested_href")]
 #[test_case("cases/section_handle_nesting")]
 #[test_case("cases/feed_nested_href")]
