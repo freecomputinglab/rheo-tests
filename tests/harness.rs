@@ -1660,3 +1660,64 @@ fn test_lossy_document_title_warning() {
 
     let _ = std::fs::remove_dir_all(&build_dir);
 }
+
+/// The built-in default stylesheet ships as a real linked `.css` asset (not an
+/// inline `<style>` block), with a depth-relative `<link href>` on nested pages.
+/// See rheo-u7i.
+#[test]
+fn test_default_css_is_linked_asset() {
+    let project = "cases/default_css_linked";
+    let build_dir = PathBuf::from("store").join("default_css_linked_build");
+    let _ = std::fs::remove_dir_all(&build_dir);
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project,
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "compile failed:\n{combined}");
+
+    let html_dir = build_dir.join("html");
+
+    // The default stylesheet is emitted as a real file, byte-identical to source.
+    let css = html_dir.join("rheo-default.css");
+    assert!(css.exists(), "expected default css at {}", css.display());
+    let built = std::fs::read(&css).unwrap();
+    let src = std::fs::read("../rheo/crates/html/src/templates/style.css")
+        .expect("read source default stylesheet");
+    assert_eq!(
+        built, src,
+        "default css must be byte-identical to the source"
+    );
+
+    // Root page links it (root depth, no `../`) and has NO inline default <style>.
+    let index = std::fs::read_to_string(html_dir.join("index.html")).unwrap();
+    assert!(
+        index.contains(r#"<link rel="stylesheet" href="rheo-default.css""#),
+        "root page must link the default css:\n{index}"
+    );
+    assert!(
+        !index.contains("<style"),
+        "default css must not be inlined as <style>:\n{index}"
+    );
+
+    // Nested page links it depth-relative.
+    let nested = std::fs::read_to_string(html_dir.join("chapters/ch1.html")).unwrap();
+    assert!(
+        nested.contains(r#"href="../rheo-default.css""#),
+        "nested page must link the default css depth-relative:\n{nested}"
+    );
+
+    let _ = std::fs::remove_dir_all(&build_dir);
+}
