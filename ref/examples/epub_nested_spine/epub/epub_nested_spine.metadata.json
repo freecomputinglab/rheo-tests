@@ -1,0 +1,11 @@
+{
+  "filetype": "epub",
+  "file_size": 3655,
+  "title": "Epub Nested Spine",
+  "language": "en",
+  "spine_files": [
+    "index.xhtml",
+    "pages/about.xhtml"
+  ],
+  "has_nav": true
+}

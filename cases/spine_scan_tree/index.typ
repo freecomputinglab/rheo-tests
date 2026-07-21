@@ -2,7 +2,7 @@
 
 = Spine Tree
 
-// Recursive walk of the full spine TREE (rheo-context.spine, not spine-flat),
+// Recursive walk of the full spine TREE (rheo-context().spine, not spine-flat),
 // printing depth/title/handle/path/clickable for every node so the rendered
 // HTML pins the exact tree shape produced by the zero-config directory scan.
 #let walk(nodes, depth) = {
@@ -12,7 +12,7 @@
   ]
 }
 
-#walk(rheo-context.spine, 0)
+#walk(rheo-context().spine, 0)
 
 == Assertions
 
@@ -20,7 +20,7 @@ These hard-fail the build (rather than silently baking a wrong shape into the
 reference) if the zero-config directory-scan spine ever changes shape.
 
 #{
-  let root = rheo-context.spine
+  let root = rheo-context().spine
 
   // `guide/` has a landing page (guide/index.typ) => clickable node whose own
   // handle/path are the directory's, not a separate "index" child.
@@ -51,7 +51,7 @@ reference) if the zero-config directory-scan spine ever changes shape.
   // spine-flat lists only clickable vertebrae: 01-basics:setup, guide,
   // guide:a, guide:b, guide:deep:x, index, intro = 7. Groups (guide/deep,
   // 01-basics) are excluded.
-  assert(rheo-context.spine-flat.len() == 7, message: "expected 7 clickable vertebrae in spine-flat")
+  assert(rheo-context().spine-flat.len() == 7, message: "expected 7 clickable vertebrae in spine-flat")
 
   // Pin the exact pre-order SEQUENCE, not just the count. Pre-order means a
   // directory's own landing page (e.g. `guide`) is emitted BEFORE its
@@ -60,7 +60,7 @@ reference) if the zero-config directory-scan spine ever changes shape.
   // children in place. This differs from a flat full-path lexicographic sort,
   // which would put `guide` after all of its children.
   assert(
-    rheo-context.spine-flat.map(v => v.handle) == (
+    rheo-context().spine-flat.map(v => v.handle) == (
       "01-basics:setup",
       "guide",
       "guide:a",
@@ -69,12 +69,12 @@ reference) if the zero-config directory-scan spine ever changes shape.
       "index",
       "intro",
     ),
-    message: "spine-flat pre-order sequence changed: " + rheo-context.spine-flat.map(v => v.handle).join(", "),
+    message: "spine-flat pre-order sequence changed: " + rheo-context().spine-flat.map(v => v.handle).join(", "),
   )
 }
 
-Spine-flat count: #rheo-context.spine-flat.len()
+Spine-flat count: #rheo-context().spine-flat.len()
 
-Spine-flat handles: #rheo-context.spine-flat.map(v => v.handle).join(", ")
+Spine-flat handles: #rheo-context().spine-flat.map(v => v.handle).join(", ")
 
-Handle: #rheo-context.handle
+Handle: #rheo-context().handle

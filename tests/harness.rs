@@ -19,6 +19,11 @@ use std::path::PathBuf;
 #[test_case("cases/code_blocks_with_links")]
 #[test_case("cases/cross_directory_label_collision")]
 #[test_case("cases/cross_directory_links")]
+#[test_case("cases/nested_vertebra_href")]
+#[test_case("cases/deep_nested_href")]
+#[test_case("cases/section_handle_nesting")]
+#[test_case("cases/feed_nested_href")]
+#[test_case("cases/epub_nested_spine")]
 #[test_case("cases/bundle_ref_cross_directory")]
 #[test_case("cases/feed_document_defaults")]
 #[test_case("cases/epub_inferred_spine")]
@@ -1173,7 +1178,7 @@ fn test_rheo_context_target_and_no_legacy_key() {
     std::fs::write(
         project_path.join("page.typ"),
         "ctxtarget=#sys.inputs.rheo-context.target\n\n\
-         pretarget=#rheo-context.target\n\n\
+         pretarget=#rheo-context().target\n\n\
          oldkey=#{ if \"rheo-target\" in sys.inputs { \"present\" } else { \"absent\" } }\n",
     )
     .unwrap();
@@ -1212,7 +1217,7 @@ fn test_rheo_context_target_and_no_legacy_key() {
         html.contains("ctxtarget=html"),
         "html should expose rheo-context.target == html:\n{html}"
     );
-    // Per-vertebra `#let rheo-context` prelude carries the same target.
+    // Per-vertebra `rheo-context()` composes the same target from sys.inputs.
     assert!(
         html.contains("pretarget=html"),
         "html prelude rheo-context.target must == html:\n{html}"
@@ -1237,7 +1242,7 @@ fn test_rheo_context_target_and_no_legacy_key() {
         xhtml.contains("ctxtarget=epub"),
         "epub should expose rheo-context.target == epub:\n{xhtml}"
     );
-    // Per-vertebra `#let rheo-context` prelude carries the same target.
+    // Per-vertebra `rheo-context()` composes the same target from sys.inputs.
     assert!(
         xhtml.contains("pretarget=epub"),
         "epub prelude rheo-context.target must == epub:\n{xhtml}"
@@ -1588,8 +1593,7 @@ fn migrate_converts_vertebrae_to_exclude() {
         String::from_utf8_lossy(&output.stdout),
     );
 
-    let toml_after =
-        std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
     assert!(
         !toml_after.contains("vertebrae"),
         "vertebrae key not removed by migration:\n{toml_after}"

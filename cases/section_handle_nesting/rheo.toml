@@ -1,0 +1,12 @@
+version = "0.5.0"
+formats = ["html"]
+
+# `ch-1.typ` / `ch-2.typ` live flat at the project root but a virtual
+# `[[spine.section]]` pulls them under a `chapters` segment, giving handles
+# `chapters:ch-1` / `chapters:ch-2`. This proves output-path nesting is driven
+# by the ':'-handle regardless of whether the segment came from a real
+# directory or a virtual section (mirrors spine_sections).
+
+[[spine.section]]
+name = "chapters"
+include = ["ch-1.typ", "ch-2.typ"]
