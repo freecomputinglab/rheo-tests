@@ -65,6 +65,7 @@ use std::path::PathBuf;
 #[test_case("cases/spine_performat")]
 #[test_case("cases/rheo_context_sys_inputs")]
 #[test_case("cases/spine_document_metadata")]
+#[test_case("cases/document_title_string_form")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
 #[test_case("cases/atom_feed_basic")]
