@@ -21,10 +21,10 @@
   ]
 }
 
-#walk(rheo-context.spine, 0)
+#walk(rheo-context().spine, 0)
 
 #{
-  let root = rheo-context.spine
+  let root = rheo-context().spine
   let guide = root.find(n => n.title == "Getting Started")
   assert(guide != none, message: "guide section node not found")
   assert(guide.handle == none, message: "guide section should be a non-clickable group node (handle: none)")
@@ -42,13 +42,13 @@
   let other = root.find(n => n.handle == "other")
   assert(other != none, message: "other.typ should remain top-level with handle 'other'")
 
-  let handles = rheo-context.spine-flat.map(v => v.handle)
+  let handles = rheo-context().spine-flat.map(v => v.handle)
   assert(
     handles == ("guide:intro", "guide:setup", "guide:advanced:tuning", "other"),
     message: "unexpected spine-flat order: " + handles.join(", "),
   )
 }
 
-Spine-flat handles: #rheo-context.spine-flat.map(v => v.handle).join(", ")
+Spine-flat handles: #rheo-context().spine-flat.map(v => v.handle).join(", ")
 
-Handle: #rheo-context.handle
+Handle: #rheo-context().handle

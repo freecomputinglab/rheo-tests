@@ -4,4 +4,4 @@
 
 Claimed by the `guide` spine section: handle `guide:setup`.
 
-Handle: #rheo-context.handle
+Handle: #rheo-context().handle

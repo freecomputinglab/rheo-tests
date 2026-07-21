@@ -17,16 +17,16 @@
   ]
 }
 
-#walk(rheo-context.spine, 0)
+#walk(rheo-context().spine, 0)
 
 #{
-  let handles = rheo-context.spine-flat.map(v => v.handle)
+  let handles = rheo-context().spine-flat.map(v => v.handle)
   assert(
     handles == ("guide:a", "intro"),
     message: "expected spine-flat (guide:a, intro) with TODO.typ and drafts/wip.typ excluded, got: " + handles.join(", "),
   )
 }
 
-Spine-flat handles: #rheo-context.spine-flat.map(v => v.handle).join(", ")
+Spine-flat handles: #rheo-context().spine-flat.map(v => v.handle).join(", ")
 
-Handle: #rheo-context.handle
+Handle: #rheo-context().handle

@@ -12,7 +12,7 @@
 // `[pdf.spine]` table replacing the global one wholesale.
 
 #context {
-  let handles = rheo-context.spine-flat.map(v => v.handle)
+  let handles = rheo-context().spine-flat.map(v => v.handle)
   if target() == "paged" {
     assert(
       handles == ("main",),
@@ -26,6 +26,6 @@
   }
 }
 
-Spine-flat handles: #rheo-context.spine-flat.map(v => v.handle).join(", ")
+Spine-flat handles: #rheo-context().spine-flat.map(v => v.handle).join(", ")
 
-Handle: #rheo-context.handle
+Handle: #rheo-context().handle

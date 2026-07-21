@@ -4,4 +4,4 @@
 
 Matches no spine section's `include`, so it stays top-level: handle `other`.
 
-Handle: #rheo-context.handle
+Handle: #rheo-context().handle
