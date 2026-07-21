@@ -23,23 +23,26 @@ Guarded handle: #(if "rheo-context" in sys.inputs { rheo-context().handle } else
   assert(ctx.spine-flat.len() == 2, message: "expected 2 vertebrae, got " + str(ctx.spine-flat.len()))
   for v in ctx.spine-flat {
     assert(type(v) == dictionary, message: "spine-flat entry must be dict")
-    assert(v.keys().sorted() == ("handle", "path", "title"), message: "spine-flat entry keys: " + repr(v.keys()))
+    assert(v.keys().sorted() == ("handle", "metadata", "path", "title"), message: "spine-flat entry keys: " + repr(v.keys()))
     assert(type(v.handle) == str, message: "spine-flat handle must be str")
     assert(type(v.path) == str, message: "spine-flat path must be str")
     assert(type(v.title) == str, message: "spine-flat title must be str")
+    assert(type(v.metadata) == dictionary, message: "spine-flat metadata must be dict")
   }
   assert(ctx.spine-flat.map(v => v.handle).contains("intro"), message: "spine-flat must contain 'intro'")
   assert(ctx.spine-flat.map(v => v.handle).contains("chapters:one"), message: "spine-flat must contain 'chapters:one'")
 
-  // spine — recursive tree; every node dict has (title, handle, path, children).
-  // handle/path are str for clickable vertebrae, none for group nodes.
+  // spine — recursive tree; every node dict has (title, handle, path, metadata, children).
+  // handle/path are str for clickable vertebrae, none for group nodes; metadata is
+  // always a dict (empty for group nodes and pages with no #set document(...)).
   assert(type(ctx.spine) == array, message: "spine must be array")
   let check-node(n) = {
     assert(type(n) == dictionary, message: "spine node must be dict")
-    assert(n.keys().sorted() == ("children", "handle", "path", "title"), message: "spine node keys: " + repr(n.keys()))
+    assert(n.keys().sorted() == ("children", "handle", "metadata", "path", "title"), message: "spine node keys: " + repr(n.keys()))
     assert(type(n.title) == str, message: "node title must be str")
     assert(n.handle == none or type(n.handle) == str, message: "node handle must be str or none")
     assert(n.path == none or type(n.path) == str, message: "node path must be str or none")
+    assert(type(n.metadata) == dictionary, message: "node metadata must be dict")
     assert(type(n.children) == array, message: "node children must be array")
     for c in n.children { check-node(c) }
   }
