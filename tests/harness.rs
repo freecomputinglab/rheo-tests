@@ -20,6 +20,7 @@ use std::path::PathBuf;
 #[test_case("cases/cross_directory_label_collision")]
 #[test_case("cases/cross_directory_links")]
 #[test_case("cases/nested_vertebra_href")]
+#[test_case("cases/escape_form_nested")]
 #[test_case("cases/deep_nested_href")]
 #[test_case("cases/section_handle_nesting")]
 #[test_case("cases/feed_nested_href")]
@@ -72,6 +73,8 @@ use std::path::PathBuf;
 #[test_case("cases/atom_feed_content_dir")]
 #[test_case("cases/html_css_injection")]
 #[test_case("cases/rheo_var_non_string.typ")]
+#[test_case("cases/footnote_reset_per_page")]
+#[test_case("cases/footnote_no_reset")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
