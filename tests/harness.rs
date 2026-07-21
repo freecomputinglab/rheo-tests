@@ -1721,3 +1721,58 @@ fn test_default_css_is_linked_asset() {
 
     let _ = std::fs::remove_dir_all(&build_dir);
 }
+
+/// CSS/JS that enters rheo through a package (auto-detected from the package's
+/// manifest) must also get depth-relative `<link>`/`<script>` hrefs on nested
+/// pages, exactly like user and default assets. Network: downloads/caches
+/// `@rheo/slides:0.1.0` (same as `rheo_package_slides`). See rheo-u7i.
+#[test]
+fn test_package_assets_depth_relative_on_nested_pages() {
+    let project = "cases/package_asset_nested";
+    let build_dir = PathBuf::from("store").join("package_asset_nested_build");
+    let _ = std::fs::remove_dir_all(&build_dir);
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project,
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "compile failed:\n{combined}");
+
+    let html_dir = build_dir.join("html");
+
+    // Root page links the package assets at depth 0 (no `../`).
+    let index = std::fs::read_to_string(html_dir.join("index.html")).unwrap();
+    assert!(
+        index.contains(r#"href="rheo/slides/index.css""#),
+        "root page must link package css:\n{index}"
+    );
+    assert!(
+        index.contains(r#"src="rheo/slides/lib.js""#),
+        "root page must link package js:\n{index}"
+    );
+
+    // Nested page links the same package assets depth-relative.
+    let nested = std::fs::read_to_string(html_dir.join("chapters/deep.html")).unwrap();
+    assert!(
+        nested.contains(r#"href="../rheo/slides/index.css""#),
+        "nested page must link package css depth-relative:\n{nested}"
+    );
+    assert!(
+        nested.contains(r#"src="../rheo/slides/lib.js""#),
+        "nested page must link package js depth-relative:\n{nested}"
+    );
+
+    let _ = std::fs::remove_dir_all(&build_dir);
+}
