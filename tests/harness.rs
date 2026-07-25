@@ -1722,6 +1722,85 @@ fn test_default_css_is_linked_asset() {
     let _ = std::fs::remove_dir_all(&build_dir);
 }
 
+/// The `--config <PATH>` flag points rheo at a `rheo.toml` that lives *outside*
+/// the project root. The project directory here has NO `rheo.toml` of its own, so
+/// a successful html build with the external config's asset override proves the
+/// flag was honoured: the project root stays the compiled directory (assets
+/// resolve relative to it) while settings come from the external file. See
+/// rheo/crates/cli/src/lib.rs `--config` and ProjectConfig::from_path.
+#[test]
+fn test_external_config_flag() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path().join("project");
+    let config_dir = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&project_path).expect("Failed to create project dir");
+    std::fs::create_dir_all(&config_dir).expect("Failed to create config dir");
+
+    // Project source + an asset the external config will reference. NOTE: the
+    // project directory deliberately contains NO rheo.toml.
+    std::fs::write(project_path.join("main.typ"), "= Hello\n\nExternal config.\n")
+        .expect("Failed to write main.typ");
+    std::fs::write(project_path.join("custom.css"), "body { color: green; }")
+        .expect("Failed to write custom.css");
+
+    // rheo.toml lives outside the project root. It declares the html format and
+    // an asset override that only exists here — if the build honours it, the flag
+    // works. Asset paths resolve relative to the project root (custom.css above).
+    let config_file = config_dir.join("external.toml");
+    std::fs::write(
+        &config_file,
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n\
+             \n\
+             [html.assets]\n\
+             css_stylesheet = \"custom.css\"\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write external.toml");
+
+    let build_dir = dir.path().join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--config",
+            config_file.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        output.status.success(),
+        "Compilation with external --config failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The external config's asset override took effect: custom.css copied and linked.
+    let copied_css = build_dir.join("html/custom.css");
+    assert!(
+        copied_css.exists(),
+        "external config's css_stylesheet not applied: custom.css missing from html output"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&copied_css).unwrap(),
+        "body { color: green; }",
+        "Copied custom.css has wrong content"
+    );
+
+    let html = std::fs::read_to_string(build_dir.join("html/main.html"))
+        .expect("Failed to read main.html");
+    assert!(
+        html.contains(r#"href="custom.css""#),
+        "HTML should link the external config's custom.css:\n{html}"
+    );
+}
+
 /// CSS/JS that enters rheo through a package (auto-detected from the package's
 /// manifest) must also get depth-relative `<link>`/`<script>` hrefs on nested
 /// pages, exactly like user and default assets. Network: downloads/caches
