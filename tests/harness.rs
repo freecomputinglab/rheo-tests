@@ -1738,8 +1738,11 @@ fn test_external_config_flag() {
 
     // Project source + an asset the external config will reference. NOTE: the
     // project directory deliberately contains NO rheo.toml.
-    std::fs::write(project_path.join("main.typ"), "= Hello\n\nExternal config.\n")
-        .expect("Failed to write main.typ");
+    std::fs::write(
+        project_path.join("main.typ"),
+        "= Hello\n\nExternal config.\n",
+    )
+    .expect("Failed to write main.typ");
     std::fs::write(project_path.join("custom.css"), "body { color: green; }")
         .expect("Failed to write custom.css");
 
@@ -1798,6 +1801,132 @@ fn test_external_config_flag() {
     assert!(
         html.contains(r#"href="custom.css""#),
         "HTML should link the external config's custom.css:\n{html}"
+    );
+}
+
+/// The Atom feed harvests each entry's body from the first matching content
+/// region, in precedence order: (1) the first `<main>`, else (2) the first
+/// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is
+/// invisible to `verify_html_output` (it only diffs `.html`, never `feed.xml`),
+/// so assert on the generated `feed.xml` directly. See
+/// rheo/crates/core/src/util/html.rs `feed_content_inner_html`.
+#[test]
+fn test_feed_content_region_precedence() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+
+    // Tier 1: a `<main>` wins even though nav/footer chrome is also present.
+    std::fs::write(
+        project_path.join("main_tier.typ"),
+        "#let rheo-feed-title = \"Main Tier\"\n\
+         #let rheo-feed-updated = \"2025-03-01T00:00:00Z\"\n\n\
+         #html.elem(\"nav\", [Chrome MAINNAV])\n\
+         #html.elem(\"main\", [Article body MAINBODY])\n\
+         #html.elem(\"footer\", [Chrome MAINFOOT])\n",
+    )
+    .expect("write main_tier.typ");
+
+    // Tier 2: no `<main>`, so the `.rheo-feed-content` element wins over chrome.
+    std::fs::write(
+        project_path.join("class_tier.typ"),
+        "#let rheo-feed-title = \"Class Tier\"\n\
+         #let rheo-feed-updated = \"2025-03-02T00:00:00Z\"\n\n\
+         #html.elem(\"nav\", [Chrome CLASSNAV])\n\
+         #html.elem(\"div\", attrs: (class: \"rheo-feed-content\"), [Scoped body CLASSBODY])\n\
+         #html.elem(\"footer\", [Chrome CLASSFOOT])\n",
+    )
+    .expect("write class_tier.typ");
+
+    // Tier 3: neither marker, so the whole `<body>` is used.
+    std::fs::write(
+        project_path.join("body_tier.typ"),
+        "#let rheo-feed-title = \"Body Tier\"\n\
+         #let rheo-feed-updated = \"2025-03-03T00:00:00Z\"\n\n\
+         = Body Tier\n\n\
+         Whole body BODYONLY text.\n",
+    )
+    .expect("write body_tier.typ");
+
+    // feed_base_url triggers feed generation. Explicit rheo-feed-updated on every
+    // entry keeps the feed-level <updated> off the non-deterministic mtime path.
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n\
+             \n\
+             [html]\n\
+             feed_base_url = \"https://example.com\"\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("write rheo.toml");
+
+    let build_dir = project_path.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let feed =
+        std::fs::read_to_string(build_dir.join("html/feed.xml")).expect("feed.xml not generated");
+
+    // Inner (html-escaped) text of the <content> for the entry with this title.
+    // Marker words are plain ASCII, so they survive escaping and `contains` works.
+    let entry_content = |title: &str| -> String {
+        let marker = format!("<title>{title}</title>");
+        let idx = feed
+            .find(&marker)
+            .unwrap_or_else(|| panic!("no entry titled {title} in feed:\n{feed}"));
+        let rest = &feed[idx..];
+        let cstart = rest.find("<content").expect("content open tag");
+        let inner_start = cstart + rest[cstart..].find('>').expect("content '>'") + 1;
+        let inner_end = inner_start
+            + rest[inner_start..]
+                .find("</content>")
+                .expect("content close");
+        rest[inner_start..inner_end].to_string()
+    };
+
+    // Tier 1: <main> body only; nav/footer chrome excluded.
+    let main_c = entry_content("Main Tier");
+    assert!(
+        main_c.contains("MAINBODY"),
+        "main-tier content missing body: {main_c}"
+    );
+    assert!(
+        !main_c.contains("MAINNAV") && !main_c.contains("MAINFOOT"),
+        "main-tier content should exclude chrome outside <main>: {main_c}"
+    );
+
+    // Tier 2: .rheo-feed-content body only; nav/footer chrome excluded.
+    let class_c = entry_content("Class Tier");
+    assert!(
+        class_c.contains("CLASSBODY"),
+        "class-tier content missing body: {class_c}"
+    );
+    assert!(
+        !class_c.contains("CLASSNAV") && !class_c.contains("CLASSFOOT"),
+        "class-tier content should exclude chrome outside .rheo-feed-content: {class_c}"
+    );
+
+    // Tier 3: whole body.
+    let body_c = entry_content("Body Tier");
+    assert!(
+        body_c.contains("BODYONLY"),
+        "body-tier content missing body: {body_c}"
     );
 }
 
