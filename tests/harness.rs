@@ -1804,6 +1804,77 @@ fn test_external_config_flag() {
     );
 }
 
+/// Content-verifies a generated non-HTML asset — the Atom `feed.xml` — against a
+/// committed reference, closing the gap that `verify_html_output` only diffs
+/// `.html` files (feed.xml is copied into refs and presence-checked, never
+/// content-compared). The fixture dates every entry with `rheo-feed-updated`, so
+/// feed.xml is deterministic (no output-mtime fallback) and safe to byte-compare.
+/// Regenerate the reference with `UPDATE_REFERENCES=1`. See rheo-tests-rcx.
+#[test]
+fn test_feed_asset_verify() {
+    use rheo_tests::helpers::comparison::compare_text_asset;
+
+    let test_store = PathBuf::from("store").join("feed_asset_verify");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/feed_asset_verify"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_feed = build_dir.join("html/feed.xml");
+    assert!(actual_feed.exists(), "feed.xml not generated");
+
+    let ref_feed = PathBuf::from("ref/cases/feed_asset_verify/feed.xml");
+    if env::var("UPDATE_REFERENCES").is_ok() {
+        std::fs::create_dir_all(ref_feed.parent().unwrap()).expect("create ref dir");
+        std::fs::copy(&actual_feed, &ref_feed).expect("write ref");
+        println!("Updated feed.xml reference at {}", ref_feed.display());
+    } else {
+        compare_text_asset(&ref_feed, &actual_feed, "test_feed_asset_verify")
+            .expect("feed.xml content mismatch");
+    }
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// The Atom feed harvests each entry's body from the first matching content
 /// region, in precedence order: (1) the first `<main>`, else (2) the first
 /// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is
