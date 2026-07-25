@@ -220,6 +220,32 @@ fn compare_html_content(reference: &Path, actual: &Path, test_name: &str) -> Res
     }
 }
 
+/// Byte-compare a generated text asset (e.g. the Atom `feed.xml`) against a
+/// committed reference, emitting a line diff on mismatch.
+///
+/// Unlike [`compare_html_content`] this performs no tag/attribute normalization —
+/// the asset must be deterministic. Feed fixtures achieve that by setting an
+/// explicit `rheo-feed-updated` on every entry, so `feed.xml` never falls back
+/// to the non-deterministic output-file mtime. Reusable for other asset kinds.
+pub fn compare_text_asset(reference: &Path, actual: &Path, label: &str) -> Result<(), String> {
+    let ref_content = fs::read_to_string(reference)
+        .map_err(|e| format!("Failed to read reference {}: {}", reference.display(), e))?;
+    let actual_content = fs::read_to_string(actual)
+        .map_err(|e| format!("Failed to read actual {}: {}", actual.display(), e))?;
+
+    if ref_content == actual_content {
+        Ok(())
+    } else {
+        let diff = compute_html_diff(&ref_content, &actual_content);
+        Err(format!(
+            "{label} asset mismatch\n  reference: {}\n  actual:    {}\n\n{}\n\nIf intentional, regenerate with:\n  UPDATE_REFERENCES=1 RHEO_MANIFEST=../rheo/Cargo.toml cargo test --test harness {label} -- --nocapture",
+            reference.display(),
+            actual.display(),
+            diff,
+        ))
+    }
+}
+
 fn compute_html_diff(reference: &str, actual: &str) -> String {
     let diff = TextDiff::from_lines(reference, actual);
 

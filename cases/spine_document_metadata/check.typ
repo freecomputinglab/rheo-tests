@@ -28,16 +28,25 @@
   assert(post.keywords == ("DiH", "MiT"), message: "post keywords: " + repr(post))
   assert(post.author == "Jane", message: "post author: " + repr(post))
   assert(post.title == "My Post", message: "post title: " + repr(post))
-  assert("date" not in post, message: "post date must not be harvested: " + repr(post.keys()))
+  // date is harvested from `#set document(date: datetime(...))` as a real Typst
+  // datetime value (not a string), reusing rheo's existing date parse. Time
+  // components default to 00:00:00; strip them with an explicit format to read
+  // the date alone.
+  assert(post.date == datetime(year: 2025, month: 1, day: 2, hour: 0, minute: 0, second: 0), message: "post date: " + repr(post))
+  assert(post.date.display("[year]-[month]-[day]") == "2025-01-02", message: "post date display: " + repr(post.date.display("[year]-[month]-[day]")))
   // keywords given as a bare string round-trips as a string, not an array.
   assert(by-handle("kw_string").keywords == "solo-tag", message: "kw_string: " + repr(by-handle("kw_string")))
 
   // ── author as an array of strings ───────────────────────────────────────────
   assert(by-handle("author_array").author == ("Jane", "John"), message: "author_array: " + repr(by-handle("author_array")))
 
+  // ── date-only page: only the datetime is harvested ──────────────────────────
+  // A vertebra whose sole `#set document(...)` arg is the date surfaces exactly
+  // one metadata key: `date`.
+  let date-only = by-handle("date_only")
+  assert(date-only == (date: datetime(year: 2025, month: 6, day: 1, hour: 0, minute: 0, second: 0)), message: "date_only: " + repr(date-only))
+
   // ── empty-metadata cases ────────────────────────────────────────────────────
-  // date-only: `datetime(...)` is a non-literal call, so nothing is harvested.
-  assert(by-handle("date_only") == (:), message: "date_only must be empty: " + repr(by-handle("date_only")))
   // no `#set document(...)` at all.
   assert(by-handle("bare") == (:), message: "bare must be empty: " + repr(by-handle("bare")))
   // this vertebra itself sets no document metadata.
