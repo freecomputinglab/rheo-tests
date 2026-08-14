@@ -1,0 +1,10 @@
+version = "0.5.0"
+formats = ["html"]
+content_dir = "content"
+
+[html]
+feed_base_url = "https://example.com"
+
+[[html.feed_include]]
+path = "extra/hello.html"
+title = "Hello Extra"

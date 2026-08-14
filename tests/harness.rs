@@ -2314,6 +2314,94 @@ fn test_marrow_asset_embedded_in_epub() {
     }
 }
 
+/// A marrow-contributed page is excluded from the Atom feed by default (it
+/// has no source vertebra, so no `rheo-feed-title`/`rheo-feed-updated` to
+/// read), with an explicit `[[html.feed_include]]` rheo.toml opt-in to bring
+/// one back with a title. Bespoke rather than `#[test_case]` because it
+/// asserts entry counts/titles on feed.xml, not a snapshot diff. See rheo bead
+/// rheo-feed-contributed-2i3.
+#[test]
+fn test_marrow_feed_exclusion_and_opt_in() {
+    fn compile_feed(case_name: &str) -> String {
+        let test_store = PathBuf::from("store").join(case_name);
+        if test_store.exists() {
+            std::fs::remove_dir_all(&test_store).expect("clean store");
+        }
+        std::fs::create_dir_all(&test_store).expect("create store");
+        copy_project_to_test_store(&PathBuf::from("cases").join(case_name), &test_store)
+            .expect("copy fixture");
+
+        // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+        let store_toml = test_store.join("rheo.toml");
+        let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+        let patched = content.replace(
+            &format!(
+                "version = \"{}\"",
+                content
+                    .lines()
+                    .find_map(|l| l
+                        .strip_prefix("version = \"")
+                        .and_then(|s| s.strip_suffix('"')))
+                    .unwrap_or("")
+            ),
+            &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        );
+        std::fs::write(&store_toml, patched).expect("patch version");
+
+        let build_dir = test_store.join("build");
+        let output = rheo_cli_command()
+            .args([
+                "compile",
+                test_store.to_str().unwrap(),
+                "--html",
+                "--build-dir",
+                build_dir.to_str().unwrap(),
+            ])
+            .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+            .output()
+            .expect("run rheo compile");
+        assert!(
+            output.status.success(),
+            "compile failed for {case_name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let feed = std::fs::read_to_string(build_dir.join("html/feed.xml"))
+            .unwrap_or_else(|e| panic!("read feed.xml for {case_name}: {e}"));
+
+        if test_store.exists() {
+            std::fs::remove_dir_all(&test_store).ok();
+        }
+        feed
+    }
+
+    let excluded_feed = compile_feed("marrow_feed_default_exclude");
+    assert_eq!(
+        excluded_feed.matches("<entry>").count(),
+        1,
+        "expected only the index entry, feed:\n{excluded_feed}"
+    );
+    assert!(
+        !excluded_feed.contains("extra/hello.html"),
+        "marrow-contributed page leaked into the feed:\n{excluded_feed}"
+    );
+
+    let opt_in_feed = compile_feed("marrow_feed_include_opt_in");
+    assert_eq!(
+        opt_in_feed.matches("<entry>").count(),
+        2,
+        "expected index + opted-in marrow entry, feed:\n{opt_in_feed}"
+    );
+    assert!(
+        opt_in_feed.contains("<title>Hello Extra</title>"),
+        "opted-in marrow entry missing its configured title, feed:\n{opt_in_feed}"
+    );
+    assert!(
+        opt_in_feed.contains("extra/hello.html"),
+        "opted-in marrow entry missing its href, feed:\n{opt_in_feed}"
+    );
+}
+
 /// Marrow is read only from the top level of the content directory. A
 /// same-named file deeper in the tree becomes an ordinary vertebra — its
 /// leading dot sanitized into a page called `_marrow` — which looks like marrow
