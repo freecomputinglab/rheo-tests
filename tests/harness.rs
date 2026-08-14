@@ -1995,6 +1995,66 @@ fn test_marrow() {
     }
 }
 
+/// Marrow is read only from the top level of the content directory. A
+/// same-named file deeper in the tree becomes an ordinary vertebra — its
+/// leading dot sanitized into a page called `_marrow` — which looks like marrow
+/// that silently did nothing, so rheo warns and names the file.
+#[test]
+fn test_nested_marrow_file_warns() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    std::fs::create_dir_all(project_path.join("content/sub")).expect("create content dir");
+    std::fs::write(project_path.join("content/alpha.typ"), "= Alpha\n").expect("write vertebra");
+    std::fs::write(
+        project_path.join("content/sub/.marrow.typ"),
+        "Nested marrow-named file.\n",
+    )
+    .expect("write nested marrow");
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\ncontent_dir = \"content\"\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("write rheo.toml");
+
+    let build_dir = project_path.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // rheo's tracing subscriber writes to stdout, not stderr.
+    let logs = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        logs.contains("marrow is only read from the top level"),
+        "expected a warning about the nested marrow file:\n{logs}"
+    );
+    assert!(
+        logs.contains("sub/.marrow.typ"),
+        "the warning must name the offending file:\n{logs}"
+    );
+
+    // It really is compiled as an ordinary page, not silently dropped.
+    assert!(
+        build_dir.join("html/sub/_marrow.html").exists(),
+        "the nested file should still build as a vertebra"
+    );
+}
+
 /// The Atom feed harvests each entry's body from the first matching content
 /// region, in precedence order: (1) the first `<main>`, else (2) the first
 /// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is

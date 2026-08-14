@@ -1,4 +1,4 @@
-use rheo_core::plugins::detect_manifest_package_assets_in_dirs;
+use rheo_core::plugins::{detect_manifest_package_assets_in_dirs, detect_package_marrow_in_dirs};
 use rheo_tests::helpers::cli::rheo_cli_command;
 
 #[test]
@@ -403,4 +403,530 @@ Copy pattern test.
             .exists(),
         "non-matched file should not be copied"
     );
+}
+
+/// Stage a package that ships its own `.marrow.typ`: importing it is enough for
+/// rheo to inline that text at the Typst bundle root, where `document()` is
+/// legal, so the package mints a page no vertebra backs. The marrow reaches the
+/// package's own code by package spec, since inlined text resolves against the
+/// project root rather than the package directory.
+fn stage_marrow_package(data_dir: &std::path::Path) {
+    let pkg_dir = data_dir.join("typst/packages/mns/mpkg/0.1.0");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("typst.toml"),
+        r#"[package]
+name = "mpkg"
+version = "0.1.0"
+entrypoint = "lib.typ"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        pkg_dir.join("lib.typ"),
+        r#"#let notes = state("mpkg-notes", ())
+#let note(name, body) = { notes.update(v => v + ((name: name, body: body),)); body }
+"#,
+    )
+    .unwrap();
+    // Arbitrary top-level Typst — no named entry point rheo has to know about.
+    std::fs::write(
+        pkg_dir.join(".marrow.typ"),
+        r#"#import "@mns/mpkg:0.1.0": notes
+#document("notes/alpha.html", format: "html", title: [Alpha])[Minted by the package.]
+#context {
+  for n in notes.final() {
+    document("notes/" + n.name + ".html", format: "html", title: [Note])[#n.body]
+  }
+}
+"#,
+    )
+    .unwrap();
+}
+
+/// E2e: a package shipping its own `.marrow.typ` mints pages purely because the
+/// project imports it — the project writes no marrow and no rheo.toml entry.
+/// See rheo bead rheo-bundle-pkg-root-i24.
+#[test]
+fn e2e_package_declared_marrow_mints_a_page() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    stage_marrow_package(data_dir.path());
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@mns/mpkg:0.1.0": note
+= Hello
+#note("beta")[Registered from a vertebra.]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The ordinary vertebra still builds.
+    assert!(
+        build_dir.join("html/main.html").exists(),
+        "the project's own page is missing"
+    );
+
+    // The package's marrow ran at bundle root and minted its page.
+    assert!(
+        build_dir.join("html/notes/alpha.html").exists(),
+        "package marrow did not mint notes/alpha.html; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // ...and it could introspect state the vertebra registered.
+    assert!(
+        build_dir.join("html/notes/beta.html").exists(),
+        "package marrow did not see state registered by a vertebra"
+    );
+
+    // The combined PDF target skips marrow entirely, so it must still succeed.
+    let pdf_build = project_path.join("build-pdf");
+    let mut cmd = rheo_cli_command();
+    cmd.args([
+        "compile",
+        project_path.to_str().unwrap(),
+        "--pdf",
+        "--build-dir",
+        pdf_build.to_str().unwrap(),
+    ])
+    .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+    .env("XDG_DATA_HOME", data_dir.path())
+    .env("XDG_CACHE_HOME", cache_dir.path());
+    let pdf_output = cmd.output().expect("Failed to run rheo compile --pdf");
+    assert!(
+        pdf_output.status.success(),
+        "pdf compile failed: {}",
+        String::from_utf8_lossy(&pdf_output.stderr)
+    );
+}
+
+/// `auto_detect_packages = false` is one switch for all manifest-driven
+/// behaviour: it suppresses package-declared marrow just as it suppresses
+/// package assets.
+#[test]
+fn package_marrow_respects_auto_detect_opt_out() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    stage_marrow_package(data_dir.path());
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@mns/mpkg:0.1.0": note
+= Hello
+#note("beta")[Registered from a vertebra.]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n\n[html]\nauto_detect_packages = false\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        build_dir.join("html/main.html").exists(),
+        "the project's own page is missing"
+    );
+    assert!(
+        !build_dir.join("html/notes/alpha.html").exists(),
+        "opted out of auto-detect but package marrow still ran"
+    );
+    assert!(
+        !build_dir.join("html/notes/beta.html").exists(),
+        "opted out of auto-detect but package marrow still ran"
+    );
+}
+
+/// Stage a package that ships the given marrow text, or none at all, and return
+/// the search root to hand the detector.
+fn stage_package_with_marrow(marrow: Option<&str>) -> tempfile::TempDir {
+    let search_root = tempfile::tempdir().unwrap();
+    let pkg_dir = search_root.path().join("mns/mpkg/0.1.0");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("typst.toml"),
+        "[package]\nname = \"mpkg\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n",
+    )
+    .unwrap();
+    std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
+    if let Some(text) = marrow {
+        std::fs::write(pkg_dir.join(".marrow.typ"), text).unwrap();
+    }
+    search_root
+}
+
+/// A package's marrow is inlined verbatim — rheo neither parses nor rewrites it.
+#[test]
+fn detect_package_marrow_returns_the_file_verbatim() {
+    let text = "#import \"@mns/mpkg:0.1.0\": notes\n#context { }\n";
+    let root = stage_package_with_marrow(Some(text));
+
+    let imports = vec!["@mns/mpkg:0.1.0".to_string()];
+    let found = detect_package_marrow_in_dirs(&imports, &[root.path().to_path_buf()]);
+
+    assert_eq!(found, vec![text.to_string()]);
+}
+
+#[test]
+fn detect_package_marrow_skips_packages_without_one() {
+    let root = stage_package_with_marrow(None);
+
+    let imports = vec!["@mns/mpkg:0.1.0".to_string()];
+    let found = detect_package_marrow_in_dirs(&imports, &[root.path().to_path_buf()]);
+
+    assert!(found.is_empty());
+}
+
+/// Every imported package contributes, in import order, so several packages can
+/// each extend the bundle independently.
+#[test]
+fn detect_package_marrow_collects_every_package_in_import_order() {
+    let search_root = tempfile::tempdir().unwrap();
+    for (ns, text) in [("apkg", "#let a = 1\n"), ("bpkg", "#let b = 2\n")] {
+        let pkg_dir = search_root.path().join(format!("mns/{ns}/0.1.0"));
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(
+            pkg_dir.join("typst.toml"),
+            format!("[package]\nname = \"{ns}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"),
+        )
+        .unwrap();
+        std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
+        std::fs::write(pkg_dir.join(".marrow.typ"), text).unwrap();
+    }
+
+    let imports = vec!["@mns/bpkg:0.1.0".to_string(), "@mns/apkg:0.1.0".to_string()];
+    let found = detect_package_marrow_in_dirs(&imports, &[search_root.path().to_path_buf()]);
+
+    assert_eq!(
+        found,
+        vec!["#let b = 2\n".to_string(), "#let a = 1\n".to_string()]
+    );
+}
+
+/// A project's own marrow and an imported package's are both inlined — neither
+/// suppresses the other — and the project's filename is configurable while a
+/// package always ships `.marrow.typ`.
+#[test]
+fn e2e_project_and_package_marrow_both_inline() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    stage_marrow_package(data_dir.path());
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@mns/mpkg:0.1.0": note
+= Hello
+#note("beta")[Registered from a vertebra.]
+"#,
+    )
+    .unwrap();
+    // The project names its marrow something other than the default.
+    std::fs::write(
+        project_path.join("bundle-root.typ"),
+        r#"#document("site/extra.html", format: "html", title: [Extra])[From the project marrow.]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\nmarrow = \"bundle-root.typ\"\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The package's marrow ran...
+    assert!(
+        build_dir.join("html/notes/alpha.html").exists(),
+        "package marrow did not run"
+    );
+    assert!(
+        build_dir.join("html/notes/beta.html").exists(),
+        "package marrow did not see vertebra-registered state"
+    );
+    // ...and so did the project's, under its configured name.
+    assert!(
+        build_dir.join("html/site/extra.html").exists(),
+        "project marrow under a configured filename did not run"
+    );
+    // The renamed marrow is not a vertebra.
+    assert!(
+        !build_dir.join("html/bundle-root.html").exists(),
+        "the configured marrow file was compiled as a vertebra"
+    );
+    assert!(
+        build_dir.join("html/main.html").exists(),
+        "the project's own page is missing"
+    );
+}
+
+/// Stage a package at `mns/<name>/0.1.0` shipping the given marrow text.
+fn stage_named_marrow_package(data_dir: &std::path::Path, name: &str, marrow: &str) {
+    let pkg_dir = data_dir.join(format!("typst/packages/mns/{name}/0.1.0"));
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("typst.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"),
+    )
+    .unwrap();
+    std::fs::write(pkg_dir.join("lib.typ"), "#let marker = \"present\"\n").unwrap();
+    std::fs::write(pkg_dir.join(".marrow.typ"), marrow).unwrap();
+}
+
+/// Several imported packages may each ship a `.marrow.typ`, and every one is
+/// inlined — a package's contribution never displaces another's.
+#[test]
+fn e2e_multiple_packages_each_contribute_marrow() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    stage_named_marrow_package(
+        data_dir.path(),
+        "onepkg",
+        r#"#document("one/page.html", format: "html", title: [One])[From package one.]
+#asset("one/data.json", "{\"pkg\":1}")
+"#,
+    );
+    stage_named_marrow_package(
+        data_dir.path(),
+        "twopkg",
+        r#"#document("two/page.html", format: "html", title: [Two])[From package two.]
+"#,
+    );
+    // A third package ships marrow but is never imported: it must contribute nothing.
+    stage_named_marrow_package(
+        data_dir.path(),
+        "unusedpkg",
+        r#"#document("unused/page.html", format: "html", title: [Unused])[Never imported.]
+"#,
+    );
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@mns/onepkg:0.1.0": marker
+#import "@mns/twopkg:0.1.0": marker as marker2
+= Hello
+Two packages imported.
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        build_dir.join("html/one/page.html").exists(),
+        "first package's marrow did not run"
+    );
+    assert!(
+        build_dir.join("html/two/page.html").exists(),
+        "second package's marrow did not run"
+    );
+    // Marrow mints assets as well as documents, written verbatim.
+    let asset = std::fs::read_to_string(build_dir.join("html/one/data.json"))
+        .expect("package marrow asset missing");
+    assert_eq!(asset, "{\"pkg\":1}");
+    // An unimported package contributes nothing, even though it ships marrow.
+    assert!(
+        !build_dir.join("html/unused/page.html").exists(),
+        "marrow ran for a package the project never imported"
+    );
+}
+
+/// Every marrow is inlined into ONE top-level scope, packages first and the
+/// project last: the project's marrow can use a binding that a package's marrow
+/// imported, without importing it itself.
+#[test]
+fn e2e_marrow_shares_one_top_level_scope_packages_first() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    // The package's marrow imports a binding and mints nothing itself.
+    stage_named_marrow_package(
+        data_dir.path(),
+        "scopepkg",
+        "#import \"@mns/scopepkg:0.1.0\": marker\n",
+    );
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@mns/scopepkg:0.1.0": marker
+= Hello
+Scope test.
+"#,
+    )
+    .unwrap();
+    // The project's marrow uses `marker` without importing it — only possible
+    // if the package's marrow was inlined into the same scope, ahead of it.
+    std::fs::write(
+        project_path.join(".marrow.typ"),
+        r#"#document("scope/page.html", format: "html", title: [Scope])[marker is #marker]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "project marrow could not see a package marrow's binding: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let page = std::fs::read_to_string(build_dir.join("html/scope/page.html"))
+        .expect("scope/page.html missing");
+    assert!(
+        page.contains("marker is present"),
+        "binding did not resolve in the project's marrow:\n{page}"
+    );
+}
+
+/// An empty marrow file is a no-op, not a compile error.
+#[test]
+fn e2e_empty_package_marrow_is_a_no_op() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    stage_named_marrow_package(data_dir.path(), "emptypkg", "");
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        "#import \"@mns/emptypkg:0.1.0\": marker\n= Hello\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+    let output = run_rheo_compile(
+        project_path,
+        &build_dir,
+        vec![
+            ("XDG_DATA_HOME", data_dir.path()),
+            ("XDG_CACHE_HOME", cache_dir.path()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "empty marrow broke the build: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(build_dir.join("html/main.html").exists());
 }
