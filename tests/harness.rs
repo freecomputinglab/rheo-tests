@@ -1995,6 +1995,92 @@ fn test_marrow() {
     }
 }
 
+/// A page minted at the bundle root via `rheo-document()` must get the same
+/// per-document init a spine vertebra gets for free from `rheo-page-init`:
+/// `state("rheo-handle")` set to its own handle (not the last spine page's),
+/// and the footnote counter reset to 0 for per-page formats. Bespoke rather
+/// than `#[test_case]` because it asserts on substrings of the rendered HTML,
+/// which the generic snapshot-diff runner does not do. See rheo bead
+/// rheo-rheo-document-bzo.
+#[test]
+fn test_marrow_page_init() {
+    let test_store = PathBuf::from("store").join("marrow_page_init");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow_page_init"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_page = build_dir.join("html/extra/x.html");
+    assert!(
+        actual_page.exists(),
+        "rheo-document() did not emit extra/x.html"
+    );
+    let page_html = std::fs::read_to_string(&actual_page).expect("read extra/x.html");
+
+    // state("rheo-handle") must read this page's own handle, not index's.
+    assert!(
+        page_html.contains("Handle seen here: extra:x"),
+        "marrow page did not see its own handle via state(\"rheo-handle\"):\n{page_html}"
+    );
+
+    // The footnote counter must reset to 0 for this page, not continue from
+    // index's two footnotes. `loc-N` ids are global bundle-wide location
+    // counters and incidental; only the visible noteref number matters.
+    fn first_footnote_number(html: &str) -> Option<String> {
+        let marker = "role=\"doc-noteref\">";
+        let start = html.find(marker)? + marker.len();
+        let after_a_open = html[start..].find('>')? + start + 1;
+        let end = html[after_a_open..].find('<')? + after_a_open;
+        Some(html[after_a_open..end].to_string())
+    }
+    assert_eq!(
+        first_footnote_number(&page_html).as_deref(),
+        Some("1"),
+        "marrow page footnote was not reset to 1:\n{page_html}"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// Marrow is read only from the top level of the content directory. A
 /// same-named file deeper in the tree becomes an ordinary vertebra — its
 /// leading dot sanitized into a page called `_marrow` — which looks like marrow
