@@ -2402,6 +2402,106 @@ fn test_marrow_feed_exclusion_and_opt_in() {
     );
 }
 
+/// `--emit-bundle-source` writes the synthesized Typst bundle main to
+/// `<build_dir>/<plugin>/.rheo-bundle.typ` — a read-only debug artifact for
+/// diagnosing marrow/spine authoring errors. Off by default, and must not
+/// change compiled output. Bespoke rather than `#[test_case]` because it
+/// compiles the same store twice to compare flag-on/flag-off output. See rheo
+/// bead rheo-4n3.
+#[test]
+fn test_emit_bundle_source_flag() {
+    let test_store = PathBuf::from("store").join("emit_bundle_source");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/emit_bundle_source"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let debug_path = build_dir.join("html/.rheo-bundle.typ");
+    let index_path = build_dir.join("html/index.html");
+
+    // Step 1: no flag — no debug artifact, capture baseline output.
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !debug_path.exists(),
+        "bundle debug source written without --emit-bundle-source"
+    );
+    let baseline_index = std::fs::read_to_string(&index_path).expect("read baseline index.html");
+
+    // Step 2: with flag — debug artifact appears, output unchanged.
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+            "--emit-bundle-source",
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile --emit-bundle-source");
+    assert!(
+        output.status.success(),
+        "compile --emit-bundle-source failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bundle_source = std::fs::read_to_string(&debug_path).expect("read .rheo-bundle.typ");
+    assert!(
+        bundle_source.contains("#document("),
+        "bundle debug source missing #document( block:\n{bundle_source}"
+    );
+    assert!(
+        bundle_source.contains("Marrow body marker."),
+        "bundle debug source missing inlined marrow body:\n{bundle_source}"
+    );
+
+    let flagged_index = std::fs::read_to_string(&index_path).expect("read flagged index.html");
+    assert_eq!(
+        baseline_index, flagged_index,
+        "--emit-bundle-source changed compiled output"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// Marrow is read only from the top level of the content directory. A
 /// same-named file deeper in the tree becomes an ordinary vertebra — its
 /// leading dot sanitized into a page called `_marrow` — which looks like marrow
