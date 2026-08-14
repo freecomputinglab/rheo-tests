@@ -1875,6 +1875,693 @@ fn test_feed_asset_verify() {
     }
 }
 
+/// Marrow contributions: `content/.marrow.typ` is emitted at the Typst bundle
+/// root, OUTSIDE every `#document` block rheo synthesizes, so its `document()`
+/// and `asset()` calls mint extra output files. Marrow sits inside the spine
+/// without being part of it: it is not a vertebra and must not produce
+/// `.marrow.html`. A bespoke test rather than a `#[test_case]` because this
+/// asserts on a non-HTML asset, on a file that must NOT exist, and on a second
+/// format run — none of which `verify_html_output` can do. See rheo beads
+/// rheo-bundle-root-cc4 (feature) and rheo-bundle-assets-x88 (the asset half).
+/// Regenerate the reference with `UPDATE_REFERENCES=1`.
+#[test]
+fn test_marrow() {
+    use rheo_tests::helpers::comparison::compare_text_asset;
+
+    let test_store = PathBuf::from("store").join("marrow");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow"), &test_store).expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The marrow `document()` mints a page outside the spine.
+    let actual_page = build_dir.join("html/extra/hello.html");
+    assert!(
+        actual_page.exists(),
+        "marrow document() did not emit extra/hello.html"
+    );
+
+    // The marrow `asset()` lands verbatim, not routed through the HTML plugin.
+    let actual_asset = build_dir.join("html/extra/hello.txt");
+    assert!(
+        actual_asset.exists(),
+        "marrow asset() did not emit extra/hello.txt"
+    );
+    let asset_bytes = std::fs::read(&actual_asset).expect("read hello.txt");
+    assert_eq!(
+        asset_bytes, b"root-level asset",
+        "marrow asset bytes differ"
+    );
+
+    // `.marrow.typ` is a contribution, not a vertebra: it gets no page of its own.
+    assert!(
+        !build_dir.join("html/.marrow.html").exists(),
+        ".marrow.typ was compiled as an ordinary vertebra"
+    );
+
+    let ref_page = PathBuf::from("ref/cases/marrow/extra/hello.html");
+    if env::var("UPDATE_REFERENCES").is_ok() {
+        std::fs::create_dir_all(ref_page.parent().unwrap()).expect("create ref dir");
+        std::fs::copy(&actual_page, &ref_page).expect("write ref");
+        println!("Updated hello.html reference at {}", ref_page.display());
+    } else {
+        compare_text_asset(&ref_page, &actual_page, "test_marrow")
+            .expect("extra/hello.html content mismatch");
+    }
+
+    // The marrow is skipped for the combined PDF target: the build still
+    // succeeds and no extra PDF appears.
+    let pdf_output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--pdf",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile --pdf");
+    assert!(
+        pdf_output.status.success(),
+        "pdf compile failed: {}",
+        String::from_utf8_lossy(&pdf_output.stderr)
+    );
+    let pdfs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("pdf"))
+        .expect("read build/pdf")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "pdf"))
+        .collect();
+    assert_eq!(pdfs.len(), 1, "expected exactly one PDF, got {pdfs:?}");
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// A page minted at the bundle root via `rheo-document()` must get the same
+/// per-document init a spine vertebra gets for free from `rheo-page-init`:
+/// `state("rheo-handle")` set to its own handle (not the last spine page's),
+/// and the footnote counter reset to 0 for per-page formats. Bespoke rather
+/// than `#[test_case]` because it asserts on substrings of the rendered HTML,
+/// which the generic snapshot-diff runner does not do. See rheo bead
+/// rheo-rheo-document-bzo.
+#[test]
+fn test_marrow_page_init() {
+    let test_store = PathBuf::from("store").join("marrow_page_init");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow_page_init"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_page = build_dir.join("html/extra/x.html");
+    assert!(
+        actual_page.exists(),
+        "rheo-document() did not emit extra/x.html"
+    );
+    let page_html = std::fs::read_to_string(&actual_page).expect("read extra/x.html");
+
+    // state("rheo-handle") must read this page's own handle, not index's.
+    assert!(
+        page_html.contains("Handle seen here: extra:x"),
+        "marrow page did not see its own handle via state(\"rheo-handle\"):\n{page_html}"
+    );
+
+    // The footnote counter must reset to 0 for this page, not continue from
+    // index's two footnotes. `loc-N` ids are global bundle-wide location
+    // counters and incidental; only the visible noteref number matters.
+    fn first_footnote_number(html: &str) -> Option<String> {
+        let marker = "role=\"doc-noteref\">";
+        let start = html.find(marker)? + marker.len();
+        let after_a_open = html[start..].find('>')? + start + 1;
+        let end = html[after_a_open..].find('<')? + after_a_open;
+        Some(html[after_a_open..end].to_string())
+    }
+    assert_eq!(
+        first_footnote_number(&page_html).as_deref(),
+        Some("1"),
+        "marrow page footnote was not reset to 1:\n{page_html}"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// A marrow-contributed page stays in the EPUB container (manifest + physical
+/// XHTML file) but must not enter the reading order (package.opf spine) or the
+/// nav.xhtml table of contents, since it is not a vertebra. Bespoke rather than
+/// `#[test_case]` because it opens the EPUB zip directly. See rheo bead
+/// rheo-yus.
+#[test]
+fn test_marrow_excluded_from_epub_reading_order() {
+    use rheo_tests::helpers::comparison::{extract_epub_metadata, extract_epub_xhtml};
+
+    let test_store = PathBuf::from("store").join("marrow_epub_reading_order");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(
+        &PathBuf::from("cases/marrow_epub_reading_order"),
+        &test_store,
+    )
+    .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
+        .expect("read build/epub")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .collect();
+    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
+    let epub_path = &epubs[0];
+
+    let metadata = extract_epub_metadata(epub_path).expect("extract EPUB metadata");
+    assert!(
+        !metadata
+            .spine_files
+            .contains(&"extra/hello.xhtml".to_string()),
+        "marrow page entered the EPUB reading order: {:?}",
+        metadata.spine_files
+    );
+    assert!(
+        metadata.spine_files.iter().any(|f| f == "index.xhtml"),
+        "index vertebra missing from EPUB reading order: {:?}",
+        metadata.spine_files
+    );
+
+    let xhtml_files = extract_epub_xhtml(epub_path).expect("extract EPUB xhtml files");
+    assert!(
+        xhtml_files.contains_key("extra/hello.xhtml"),
+        "marrow page was dropped from the EPUB container entirely, not just the reading order: {:?}",
+        xhtml_files.keys().collect::<Vec<_>>()
+    );
+
+    let nav_xhtml = {
+        use std::io::Read;
+        let file = std::fs::File::open(epub_path).expect("open epub");
+        let mut archive = zip::ZipArchive::new(file).expect("read epub archive");
+        let mut nav_file = archive
+            .by_name("EPUB/nav.xhtml")
+            .expect("find EPUB/nav.xhtml");
+        let mut contents = String::new();
+        nav_file
+            .read_to_string(&mut contents)
+            .expect("read nav.xhtml");
+        contents
+    };
+    assert!(
+        !nav_xhtml.contains("href=\"extra/hello.xhtml\""),
+        "marrow page got a top-level nav entry:\n{nav_xhtml}"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// A marrow-emitted `asset()` must be embedded IN the EPUB container (manifest
+/// item + physical bytes in the zip), not written as a loose file beside the
+/// .epub the way it is for HTML. Bespoke rather than `#[test_case]` because it
+/// opens the EPUB zip and parses package.opf directly. See rheo bead rheo-135.
+#[test]
+fn test_marrow_asset_embedded_in_epub() {
+    use rheo_epub::package::Package;
+    use std::io::Read;
+
+    let test_store = PathBuf::from("store").join("marrow_epub_asset");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow_epub_asset"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !build_dir.join("epub/extra/hello.txt").exists(),
+        "marrow asset was written as a loose file next to the EPUB; it should be embedded in the container instead"
+    );
+
+    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
+        .expect("read build/epub")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .collect();
+    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
+    let epub_path = &epubs[0];
+
+    let file = std::fs::File::open(epub_path).expect("open epub");
+    let mut archive = zip::ZipArchive::new(file).expect("read epub archive");
+
+    let asset_bytes = {
+        let mut asset_file = archive
+            .by_name("EPUB/extra/hello.txt")
+            .expect("find EPUB/extra/hello.txt in container");
+        let mut bytes = Vec::new();
+        asset_file
+            .read_to_end(&mut bytes)
+            .expect("read asset bytes");
+        bytes
+    };
+    assert_eq!(
+        asset_bytes, b"root-level asset",
+        "marrow asset bytes differ inside the EPUB container"
+    );
+
+    let opf_contents = {
+        let mut opf_file = archive
+            .by_name("EPUB/package.opf")
+            .expect("find EPUB/package.opf");
+        let mut contents = String::new();
+        opf_file
+            .read_to_string(&mut contents)
+            .expect("read package.opf");
+        contents
+    };
+    let package: Package = serde_xml_rs::from_str(&opf_contents).expect("parse package.opf");
+
+    let asset_item = package
+        .manifest
+        .items
+        .iter()
+        .find(|item| item.href.to_string() == "extra/hello.txt")
+        .unwrap_or_else(|| {
+            panic!(
+                "no manifest item for extra/hello.txt: {:?}",
+                package.manifest.items
+            )
+        });
+    assert_eq!(
+        asset_item.media_type, "text/plain",
+        "wrong media-type for extra/hello.txt: {:?}",
+        asset_item
+    );
+
+    assert!(
+        !package
+            .spine
+            .itemref
+            .iter()
+            .any(|itemref| itemref.idref == asset_item.id),
+        "marrow asset entered the EPUB reading order"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// A marrow-contributed page is excluded from the Atom feed by default (it
+/// has no source vertebra, so no `rheo-feed-title`/`rheo-feed-updated` to
+/// read), with an explicit `[[html.feed_include]]` rheo.toml opt-in to bring
+/// one back with a title. Bespoke rather than `#[test_case]` because it
+/// asserts entry counts/titles on feed.xml, not a snapshot diff. See rheo bead
+/// rheo-feed-contributed-2i3.
+#[test]
+fn test_marrow_feed_exclusion_and_opt_in() {
+    fn compile_feed(case_name: &str) -> String {
+        let test_store = PathBuf::from("store").join(case_name);
+        if test_store.exists() {
+            std::fs::remove_dir_all(&test_store).expect("clean store");
+        }
+        std::fs::create_dir_all(&test_store).expect("create store");
+        copy_project_to_test_store(&PathBuf::from("cases").join(case_name), &test_store)
+            .expect("copy fixture");
+
+        // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+        let store_toml = test_store.join("rheo.toml");
+        let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+        let patched = content.replace(
+            &format!(
+                "version = \"{}\"",
+                content
+                    .lines()
+                    .find_map(|l| l
+                        .strip_prefix("version = \"")
+                        .and_then(|s| s.strip_suffix('"')))
+                    .unwrap_or("")
+            ),
+            &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        );
+        std::fs::write(&store_toml, patched).expect("patch version");
+
+        let build_dir = test_store.join("build");
+        let output = rheo_cli_command()
+            .args([
+                "compile",
+                test_store.to_str().unwrap(),
+                "--html",
+                "--build-dir",
+                build_dir.to_str().unwrap(),
+            ])
+            .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+            .output()
+            .expect("run rheo compile");
+        assert!(
+            output.status.success(),
+            "compile failed for {case_name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let feed = std::fs::read_to_string(build_dir.join("html/feed.xml"))
+            .unwrap_or_else(|e| panic!("read feed.xml for {case_name}: {e}"));
+
+        if test_store.exists() {
+            std::fs::remove_dir_all(&test_store).ok();
+        }
+        feed
+    }
+
+    let excluded_feed = compile_feed("marrow_feed_default_exclude");
+    assert_eq!(
+        excluded_feed.matches("<entry>").count(),
+        1,
+        "expected only the index entry, feed:\n{excluded_feed}"
+    );
+    assert!(
+        !excluded_feed.contains("extra/hello.html"),
+        "marrow-contributed page leaked into the feed:\n{excluded_feed}"
+    );
+
+    let opt_in_feed = compile_feed("marrow_feed_include_opt_in");
+    assert_eq!(
+        opt_in_feed.matches("<entry>").count(),
+        2,
+        "expected index + opted-in marrow entry, feed:\n{opt_in_feed}"
+    );
+    assert!(
+        opt_in_feed.contains("<title>Hello Extra</title>"),
+        "opted-in marrow entry missing its configured title, feed:\n{opt_in_feed}"
+    );
+    assert!(
+        opt_in_feed.contains("extra/hello.html"),
+        "opted-in marrow entry missing its href, feed:\n{opt_in_feed}"
+    );
+}
+
+/// `--emit-bundle-source` writes the synthesized Typst bundle main to
+/// `<build_dir>/<plugin>/.rheo-bundle.typ` — a read-only debug artifact for
+/// diagnosing marrow/spine authoring errors. Off by default, and must not
+/// change compiled output. Bespoke rather than `#[test_case]` because it
+/// compiles the same store twice to compare flag-on/flag-off output. See rheo
+/// bead rheo-4n3.
+#[test]
+fn test_emit_bundle_source_flag() {
+    let test_store = PathBuf::from("store").join("emit_bundle_source");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/emit_bundle_source"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let debug_path = build_dir.join("html/.rheo-bundle.typ");
+    let index_path = build_dir.join("html/index.html");
+
+    // Step 1: no flag — no debug artifact, capture baseline output.
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !debug_path.exists(),
+        "bundle debug source written without --emit-bundle-source"
+    );
+    let baseline_index = std::fs::read_to_string(&index_path).expect("read baseline index.html");
+
+    // Step 2: with flag — debug artifact appears, output unchanged.
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+            "--emit-bundle-source",
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile --emit-bundle-source");
+    assert!(
+        output.status.success(),
+        "compile --emit-bundle-source failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bundle_source = std::fs::read_to_string(&debug_path).expect("read .rheo-bundle.typ");
+    assert!(
+        bundle_source.contains("#document("),
+        "bundle debug source missing #document( block:\n{bundle_source}"
+    );
+    assert!(
+        bundle_source.contains("Marrow body marker."),
+        "bundle debug source missing inlined marrow body:\n{bundle_source}"
+    );
+
+    let flagged_index = std::fs::read_to_string(&index_path).expect("read flagged index.html");
+    assert_eq!(
+        baseline_index, flagged_index,
+        "--emit-bundle-source changed compiled output"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// Marrow is read only from the top level of the content directory. A
+/// same-named file deeper in the tree becomes an ordinary vertebra — its
+/// leading dot sanitized into a page called `_marrow` — which looks like marrow
+/// that silently did nothing, so rheo warns and names the file.
+#[test]
+fn test_nested_marrow_file_warns() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    std::fs::create_dir_all(project_path.join("content/sub")).expect("create content dir");
+    std::fs::write(project_path.join("content/alpha.typ"), "= Alpha\n").expect("write vertebra");
+    std::fs::write(
+        project_path.join("content/sub/.marrow.typ"),
+        "Nested marrow-named file.\n",
+    )
+    .expect("write nested marrow");
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\ncontent_dir = \"content\"\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("write rheo.toml");
+
+    let build_dir = project_path.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // rheo's tracing subscriber writes to stdout, not stderr.
+    let logs = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        logs.contains("marrow is only read from the top level"),
+        "expected a warning about the nested marrow file:\n{logs}"
+    );
+    assert!(
+        logs.contains("sub/.marrow.typ"),
+        "the warning must name the offending file:\n{logs}"
+    );
+
+    // It really is compiled as an ordinary page, not silently dropped.
+    assert!(
+        build_dir.join("html/sub/_marrow.html").exists(),
+        "the nested file should still build as a vertebra"
+    );
+}
+
 /// The Atom feed harvests each entry's body from the first matching content
 /// region, in precedence order: (1) the first `<main>`, else (2) the first
 /// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is
