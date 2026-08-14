@@ -1875,6 +1875,126 @@ fn test_feed_asset_verify() {
     }
 }
 
+/// Marrow contributions: `content/.marrow.typ` is emitted at the Typst bundle
+/// root, OUTSIDE every `#document` block rheo synthesizes, so its `document()`
+/// and `asset()` calls mint extra output files. Marrow sits inside the spine
+/// without being part of it: it is not a vertebra and must not produce
+/// `.marrow.html`. A bespoke test rather than a `#[test_case]` because this
+/// asserts on a non-HTML asset, on a file that must NOT exist, and on a second
+/// format run — none of which `verify_html_output` can do. See rheo beads
+/// rheo-bundle-root-cc4 (feature) and rheo-bundle-assets-x88 (the asset half).
+/// Regenerate the reference with `UPDATE_REFERENCES=1`.
+#[test]
+fn test_marrow() {
+    use rheo_tests::helpers::comparison::compare_text_asset;
+
+    let test_store = PathBuf::from("store").join("marrow");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow"), &test_store).expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The marrow `document()` mints a page outside the spine.
+    let actual_page = build_dir.join("html/extra/hello.html");
+    assert!(
+        actual_page.exists(),
+        "marrow document() did not emit extra/hello.html"
+    );
+
+    // The marrow `asset()` lands verbatim, not routed through the HTML plugin.
+    let actual_asset = build_dir.join("html/extra/hello.txt");
+    assert!(
+        actual_asset.exists(),
+        "marrow asset() did not emit extra/hello.txt"
+    );
+    let asset_bytes = std::fs::read(&actual_asset).expect("read hello.txt");
+    assert_eq!(
+        asset_bytes, b"root-level asset",
+        "marrow asset bytes differ"
+    );
+
+    // `.marrow.typ` is a contribution, not a vertebra: it gets no page of its own.
+    assert!(
+        !build_dir.join("html/.marrow.html").exists(),
+        ".marrow.typ was compiled as an ordinary vertebra"
+    );
+
+    let ref_page = PathBuf::from("ref/cases/marrow/extra/hello.html");
+    if env::var("UPDATE_REFERENCES").is_ok() {
+        std::fs::create_dir_all(ref_page.parent().unwrap()).expect("create ref dir");
+        std::fs::copy(&actual_page, &ref_page).expect("write ref");
+        println!("Updated hello.html reference at {}", ref_page.display());
+    } else {
+        compare_text_asset(&ref_page, &actual_page, "test_marrow")
+            .expect("extra/hello.html content mismatch");
+    }
+
+    // The marrow is skipped for the combined PDF target: the build still
+    // succeeds and no extra PDF appears.
+    let pdf_output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--pdf",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile --pdf");
+    assert!(
+        pdf_output.status.success(),
+        "pdf compile failed: {}",
+        String::from_utf8_lossy(&pdf_output.stderr)
+    );
+    let pdfs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("pdf"))
+        .expect("read build/pdf")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "pdf"))
+        .collect();
+    assert_eq!(pdfs.len(), 1, "expected exactly one PDF, got {pdfs:?}");
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// The Atom feed harvests each entry's body from the first matching content
 /// region, in precedence order: (1) the first `<main>`, else (2) the first
 /// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is
