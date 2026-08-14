@@ -2188,6 +2188,132 @@ fn test_marrow_excluded_from_epub_reading_order() {
     }
 }
 
+/// A marrow-emitted `asset()` must be embedded IN the EPUB container (manifest
+/// item + physical bytes in the zip), not written as a loose file beside the
+/// .epub the way it is for HTML. Bespoke rather than `#[test_case]` because it
+/// opens the EPUB zip and parses package.opf directly. See rheo bead rheo-135.
+#[test]
+fn test_marrow_asset_embedded_in_epub() {
+    use rheo_epub::package::Package;
+    use std::io::Read;
+
+    let test_store = PathBuf::from("store").join("marrow_epub_asset");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow_epub_asset"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !build_dir.join("epub/extra/hello.txt").exists(),
+        "marrow asset was written as a loose file next to the EPUB; it should be embedded in the container instead"
+    );
+
+    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
+        .expect("read build/epub")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .collect();
+    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
+    let epub_path = &epubs[0];
+
+    let file = std::fs::File::open(epub_path).expect("open epub");
+    let mut archive = zip::ZipArchive::new(file).expect("read epub archive");
+
+    let asset_bytes = {
+        let mut asset_file = archive
+            .by_name("EPUB/extra/hello.txt")
+            .expect("find EPUB/extra/hello.txt in container");
+        let mut bytes = Vec::new();
+        asset_file
+            .read_to_end(&mut bytes)
+            .expect("read asset bytes");
+        bytes
+    };
+    assert_eq!(
+        asset_bytes, b"root-level asset",
+        "marrow asset bytes differ inside the EPUB container"
+    );
+
+    let opf_contents = {
+        let mut opf_file = archive
+            .by_name("EPUB/package.opf")
+            .expect("find EPUB/package.opf");
+        let mut contents = String::new();
+        opf_file
+            .read_to_string(&mut contents)
+            .expect("read package.opf");
+        contents
+    };
+    let package: Package = serde_xml_rs::from_str(&opf_contents).expect("parse package.opf");
+
+    let asset_item = package
+        .manifest
+        .items
+        .iter()
+        .find(|item| item.href.to_string() == "extra/hello.txt")
+        .unwrap_or_else(|| {
+            panic!(
+                "no manifest item for extra/hello.txt: {:?}",
+                package.manifest.items
+            )
+        });
+    assert_eq!(
+        asset_item.media_type, "text/plain",
+        "wrong media-type for extra/hello.txt: {:?}",
+        asset_item
+    );
+
+    assert!(
+        !package
+            .spine
+            .itemref
+            .iter()
+            .any(|itemref| itemref.idref == asset_item.id),
+        "marrow asset entered the EPUB reading order"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// Marrow is read only from the top level of the content directory. A
 /// same-named file deeper in the tree becomes an ordinary vertebra — its
 /// leading dot sanitized into a page called `_marrow` — which looks like marrow
