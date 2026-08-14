@@ -45,7 +45,7 @@ fn build_compiles_html_without_cli() {
         BuildOptions {
             formats: vec!["html".to_string()],
             build_dir: Some(build_dir.clone()),
-            font_dirs: vec![],
+            ..BuildOptions::default()
         },
     )
     .expect("prepare build");
