@@ -2081,6 +2081,113 @@ fn test_marrow_page_init() {
     }
 }
 
+/// A marrow-contributed page stays in the EPUB container (manifest + physical
+/// XHTML file) but must not enter the reading order (package.opf spine) or the
+/// nav.xhtml table of contents, since it is not a vertebra. Bespoke rather than
+/// `#[test_case]` because it opens the EPUB zip directly. See rheo bead
+/// rheo-yus.
+#[test]
+fn test_marrow_excluded_from_epub_reading_order() {
+    use rheo_tests::helpers::comparison::{extract_epub_metadata, extract_epub_xhtml};
+
+    let test_store = PathBuf::from("store").join("marrow_epub_reading_order");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(
+        &PathBuf::from("cases/marrow_epub_reading_order"),
+        &test_store,
+    )
+    .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
+        .expect("read build/epub")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .collect();
+    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
+    let epub_path = &epubs[0];
+
+    let metadata = extract_epub_metadata(epub_path).expect("extract EPUB metadata");
+    assert!(
+        !metadata
+            .spine_files
+            .contains(&"extra/hello.xhtml".to_string()),
+        "marrow page entered the EPUB reading order: {:?}",
+        metadata.spine_files
+    );
+    assert!(
+        metadata.spine_files.iter().any(|f| f == "index.xhtml"),
+        "index vertebra missing from EPUB reading order: {:?}",
+        metadata.spine_files
+    );
+
+    let xhtml_files = extract_epub_xhtml(epub_path).expect("extract EPUB xhtml files");
+    assert!(
+        xhtml_files.contains_key("extra/hello.xhtml"),
+        "marrow page was dropped from the EPUB container entirely, not just the reading order: {:?}",
+        xhtml_files.keys().collect::<Vec<_>>()
+    );
+
+    let nav_xhtml = {
+        use std::io::Read;
+        let file = std::fs::File::open(epub_path).expect("open epub");
+        let mut archive = zip::ZipArchive::new(file).expect("read epub archive");
+        let mut nav_file = archive
+            .by_name("EPUB/nav.xhtml")
+            .expect("find EPUB/nav.xhtml");
+        let mut contents = String::new();
+        nav_file
+            .read_to_string(&mut contents)
+            .expect("read nav.xhtml");
+        contents
+    };
+    assert!(
+        !nav_xhtml.contains("href=\"extra/hello.xhtml\""),
+        "marrow page got a top-level nav entry:\n{nav_xhtml}"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// Marrow is read only from the top level of the content directory. A
 /// same-named file deeper in the tree becomes an ordinary vertebra — its
 /// leading dot sanitized into a page called `_marrow` — which looks like marrow
