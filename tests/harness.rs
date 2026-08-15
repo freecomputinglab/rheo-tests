@@ -75,6 +75,7 @@ use std::path::PathBuf;
 #[test_case("cases/atom_feed_content_dir")]
 #[test_case("cases/html_css_injection")]
 #[test_case("cases/head_hoist")]
+#[test_case("cases/head_control")]
 #[test_case("cases/rheo_var_non_string.typ")]
 #[test_case("cases/footnote_reset_per_page")]
 #[test_case("cases/footnote_no_reset")]
@@ -2892,5 +2893,166 @@ fn test_transclude_content_missing_page_error() {
     assert!(
         combined.contains("nope.html"),
         "Expected error output to name the missing page 'nope.html', got:\n{combined}"
+    );
+}
+
+/// `.rheo/` is the reserved bundle-output prefix for control assets that rheo
+/// consumes internally and NEVER writes to the actual build output (rheo bead
+/// rheo-head-control-cbr, not yet implemented). `cases/head_control` mints a
+/// `.rheo/head.html` control asset alongside an ordinary `extra/hello.txt`
+/// asset via `content/.marrow.typ`. This asserts on the OUTPUT TREE directly
+/// (not just page contents, which `run_test_case`'s snapshot diff already
+/// covers) because a stray `.rheo/head.html` left on disk is exactly the kind
+/// of regression a content-only diff can't catch: the reserved prefix must be
+/// stripped from the build output while ordinary assets are unaffected.
+///
+/// EPUB coverage: intentionally NOT added here. `cases/head_control` only
+/// declares `formats = ["html"]`; wiring up a second EPUB-enabled fixture (or
+/// an `--epub` build of a project without a valid spine/title) is unrelated
+/// scaffolding for a single absence check and was judged not "cheap" per the
+/// bead's non-goals, so it's skipped entirely.
+#[test]
+fn test_head_control_excludes_reserved_prefix() {
+    let test_store = PathBuf::from("store").join("head_control_tree");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/head_control"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The reserved control-asset prefix must never appear in the build output,
+    // neither as a directory nor as the `head.html` file inside it.
+    assert!(
+        !build_dir.join("html/.rheo").exists(),
+        "build/html/.rheo/ should not exist, but it does: {} is a control-asset \
+         prefix that rheo must consume internally, never write to output",
+        build_dir.join("html/.rheo").display()
+    );
+    assert!(
+        !build_dir.join("html/.rheo/head.html").exists(),
+        "build/html/.rheo/head.html should not exist on disk"
+    );
+
+    // Ordinary assets alongside the control asset are unaffected.
+    let hello = build_dir.join("html/extra/hello.txt");
+    assert!(
+        hello.exists(),
+        "build/html/extra/hello.txt should exist (ordinary asset, unrelated to \
+         the reserved .rheo/ prefix)"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&hello).expect("read extra/hello.txt"),
+        "hi",
+        "extra/hello.txt should contain its minted content verbatim"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// An UNRECOGNISED control asset under `.rheo/` (i.e. one rheo doesn't know
+/// how to consume, unlike `.rheo/head.html`) must still be excluded from the
+/// build output, and the compile must still succeed rather than hard-error —
+/// per the rheo-head-control-cbr bead, rheo warns about it instead. Inline
+/// temp project (per the bead's own suggestion) rather than a checked-in
+/// fixture, since this is a single arbitrary/unknown asset name.
+#[test]
+fn test_head_control_unrecognized_asset_excluded_and_warns() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+
+    std::fs::write(project_path.join("index.typ"), "= Index\n\nContent.\n")
+        .expect("Failed to write index.typ");
+
+    // An unrecognised control-asset name under the reserved `.rheo/` prefix.
+    std::fs::write(
+        project_path.join(".marrow.typ"),
+        "#asset(\".rheo/future-thing.json\", \"{\\\"arbitrary\\\": true}\")\n",
+    )
+    .expect("Failed to write .marrow.typ");
+
+    let build_dir = project_path.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    // An unrecognised control asset must not hard-fail the build.
+    assert!(
+        output.status.success(),
+        "compile should succeed even for an unrecognized .rheo/* control asset: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !build_dir.join("html/.rheo/future-thing.json").exists(),
+        "build/html/.rheo/future-thing.json should not exist on disk, even for \
+         an unrecognized control asset name"
+    );
+
+    // The bead's expectation is that rheo warns about an unrecognized `.rheo/*`
+    // asset (same success-with-warning pattern as `test_warning_formatting`).
+    // This half is speculative about the exact diagnostic rheo will emit, but
+    // "warns rather than silently drops" is the documented intent, so it's
+    // asserted here rather than left purely as a TODO.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning"),
+        "Expected a warning about the unrecognized .rheo/future-thing.json \
+         control asset, got stderr:\n{stderr}"
     );
 }
