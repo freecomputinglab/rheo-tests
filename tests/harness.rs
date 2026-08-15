@@ -2742,3 +2742,154 @@ fn test_package_assets_depth_relative_on_nested_pages() {
 
     let _ = std::fs::remove_dir_all(&build_dir);
 }
+
+/// RED test for the not-yet-implemented `<rheo-content>` transclusion pass
+/// (rheo bead `rheo-transclude-3yw`). `content/.marrow.typ` mints
+/// `transcluded.xml` containing four `<rheo-content page="..." select="..."
+/// as="escaped|raw"/>` placeholders against two compiled pages:
+///
+/// - `wrapped.html` wraps its article in `<main>`, with distinct chrome text
+///   (`WRAPPEDCHROME`) in a `<nav>`/`<footer>` outside it, so scoping to
+///   `<main>` must exclude the chrome.
+/// - `plain.html` has neither a `<main>` nor a `.rheo-feed-content` element,
+///   so its content region falls through to the whole `<body>` (which does
+///   include a copy of the `WRAPPEDCHROME` text, as ordinary body prose this
+///   time, proving the two pages' entries are exclusive: chrome text should
+///   appear ONLY in the `plain.html`-sourced entry).
+///
+/// Right now rheo does not implement this substitution, so the placeholders
+/// survive verbatim into the built asset and this test fails against a
+/// reference that encodes the CORRECT eventual (post-`rheo-transclude-3yw`)
+/// output. That failure is the point: this is a deliberately RED test in a
+/// TDD pair with `rheo/` — do NOT "fix" it by weakening the reference.
+/// Regenerate the raw (pre-substitution) capture with `UPDATE_REFERENCES=1`
+/// (then re-apply the hand edits describing intended behavior — see the
+/// reference file's construction in the companion bead notes).
+#[test]
+fn test_transclude_content() {
+    use rheo_tests::helpers::comparison::compare_text_asset;
+
+    let test_store = PathBuf::from("store").join("transclude_content");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/transclude_content"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_asset = build_dir.join("html/transcluded.xml");
+    assert!(actual_asset.exists(), "transcluded.xml not generated");
+
+    let ref_asset = PathBuf::from("ref/cases/transclude_content/transcluded.xml");
+    if env::var("UPDATE_REFERENCES").is_ok() {
+        std::fs::create_dir_all(ref_asset.parent().unwrap()).expect("create ref dir");
+        std::fs::copy(&actual_asset, &ref_asset).expect("write ref");
+        println!(
+            "Updated transcluded.xml reference at {}",
+            ref_asset.display()
+        );
+    } else {
+        compare_text_asset(&ref_asset, &actual_asset, "test_transclude_content")
+            .expect("transcluded.xml content mismatch");
+    }
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// Error path for `<rheo-content>` transclusion: a placeholder naming a `page`
+/// that has no matching compiled output must be a HARD compile error naming
+/// the missing page (rheo-transclude-3yw step 4), not a silently-emitted blank
+/// substitution. Whether this currently passes or fails depends on whether
+/// rheo already errors on an unresolvable marrow-emitted asset on some other
+/// ground; either way, this records the intended future contract.
+#[test]
+fn test_transclude_content_missing_page_error() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path();
+    let build_dir = project_path.join("build");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\n\
+             formats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+
+    std::fs::write(project_path.join("index.typ"), "= Index\n\nContent.\n")
+        .expect("Failed to write index.typ");
+
+    // References a page that will never exist in this project's output.
+    std::fs::write(
+        project_path.join(".marrow.typ"),
+        "#asset(\"bad.xml\", \"<rheo-content page=\\\"nope.html\\\"/>\")\n",
+    )
+    .expect("Failed to write .marrow.typ");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail when a <rheo-content> placeholder names \
+         an unresolvable page, but it succeeded:\n{combined}"
+    );
+    assert!(
+        combined.contains("nope.html"),
+        "Expected error output to name the missing page 'nope.html', got:\n{combined}"
+    );
+}
