@@ -3216,3 +3216,141 @@ fn test_metadata_of_combined_pdf_no_crash() {
         std::fs::remove_dir_all(&test_store).ok();
     }
 }
+
+/// Today's EPUB author extraction reads a `rheo-author` Typst variable, or
+/// falls back to scraping an HTML `<meta name="author">` tag — it does NOT
+/// yet read Typst's own `#set document(author: ...)`. This fixture sets only
+/// the Typst document author (no `rheo-author`), so today's EPUB build must
+/// NOT surface it as `<dc:creator>`. This is a deliberately RED assertion:
+/// once rheo reads `#set document(author:)` off the resolved `DocumentInfo`
+/// (bead rheo-doc-info-harvest-f2r), this should start passing. Bespoke
+/// rather than `#[test_case]` because it opens the EPUB zip and reads
+/// package.opf directly for a field `EpubMetadata` doesn't model (and a
+/// `#[test_case]` registration would need committed reference metadata
+/// unrelated to this single assertion).
+#[test]
+fn test_epub_author_from_typst_document_author() {
+    use rheo_tests::helpers::comparison::extract_epub_creator;
+
+    let test_store = PathBuf::from("store").join("epub_author_metadata");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/epub_author_metadata"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
+        .expect("read build/epub")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .collect();
+    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
+    let epub_path = &epubs[0];
+
+    let creator = extract_epub_creator(epub_path).expect("extract EPUB dc:creator");
+    assert_eq!(
+        creator.as_deref(),
+        Some("Ada Lovelace"),
+        "expected dc:creator to reflect Typst's #set document(author:), got {creator:?}"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// A vertebra with no author anywhere (no `#set document(author:)`, no
+/// `rheo-author`) must still build successfully — a missing author is never
+/// a hard error, only ever an absent/empty `dc:creator`. Bespoke for the same
+/// reason as `test_epub_author_from_typst_document_author` above, and kept as
+/// its own fixture/test since author extraction only ever looks at the
+/// *first* vertebra's output, so it cannot share a fixture with the
+/// has-a-Typst-author case above.
+#[test]
+fn test_epub_author_absent_build_succeeds() {
+    let test_store = PathBuf::from("store").join("epub_author_metadata_absent");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(
+        &PathBuf::from("cases/epub_author_metadata_absent"),
+        &test_store,
+    )
+    .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--epub",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "expected EPUB build with no author at all to succeed, but it failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
