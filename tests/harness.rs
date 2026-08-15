@@ -2002,21 +2002,23 @@ fn test_marrow() {
     }
 }
 
-/// RED case for the NOT-YET-implemented `rheo-marrow-meta-d5v` (../rheo): today
-/// neither `rheo-metadata(handle)` (rheo-meta-beacons-2o5, reachable only from a
-/// vertebra's own per-vertebra prelude) nor a `rheo-metadata-all()` companion
-/// exists in MARROW scope -- the synthesized bundle root where `.marrow.typ` is
-/// inlined, outside every `#document` block. `cases/marrow_metadata/content/.marrow.typ`
-/// calls both (future-intended) forms while building a `meta.txt` asset, so
-/// compilation is expected to hard-fail. Observed today (verbatim):
-/// `error: unknown variable: rheo-metadata-all` (referenced first in the
-/// fixture, so `rheo-metadata`'s single-handle form is never reached). This
-/// asserts the FAILURE, not a content match -- flip to `compare_text_asset`
-/// against `ref/cases/marrow_metadata/meta.txt` (hand-authored, since
-/// `UPDATE_REFERENCES=1` can't run against code that doesn't compile) once
-/// rheo-marrow-meta-d5v lands.
+/// GREEN case for `rheo-marrow-meta-d5v` (../rheo, landed): `rheo-metadata(handle)`
+/// and the new `rheo-metadata-all()` companion are both reachable from MARROW
+/// scope -- the synthesized bundle root where `.marrow.typ` is inlined, outside
+/// every `#document` block. `cases/marrow_metadata/content/.marrow.typ` calls
+/// both forms (wrapped in `#context`, which `query()`-backed helpers require)
+/// while building a `meta.txt` asset. Originally written expecting a hard
+/// compile failure (neither name existed in marrow scope yet); rewritten now
+/// that they do, content-comparing the built asset like `test_feed_asset_verify`
+/// does. Along the way, found and fixed two real bugs in the original RED
+/// fixture: (1) the marrow calls weren't wrapped in `#context`, and (2) `.title`
+/// was string-concatenated directly, but `document.title` is CONTENT, not a
+/// string, and Typst's `str()` doesn't accept content at all -- `repr(m.title)`
+/// is used instead (see the fixture's own comments for detail).
 #[test]
 fn test_marrow_metadata() {
+    use rheo_tests::helpers::comparison::compare_text_asset;
+
     let test_store = PathBuf::from("store").join("marrow_metadata");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("clean store");
@@ -2054,31 +2056,24 @@ fn test_marrow_metadata() {
         .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
         .output()
         .expect("run rheo compile");
-
-    // `rheo-metadata-all`/`rheo-metadata` are not yet reachable from marrow
-    // scope: compilation must FAIL, not succeed.
     assert!(
-        !output.status.success(),
-        "expected compile to fail (rheo-metadata-all/rheo-metadata are not yet \
-         reachable from marrow scope per rheo-marrow-meta-d5v) but it succeeded; \
-         if rheo-marrow-meta-d5v has landed, replace this assertion with a \
-         compare_text_asset check against ref/cases/marrow_metadata/meta.txt \
-         (see test_feed_asset_verify/test_marrow for the pattern)"
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("unknown variable: rheo-metadata-all"),
-        "expected an \"unknown variable: rheo-metadata-all\" compile error, got:\n{stderr}"
-    );
+    let actual_asset = build_dir.join("html/meta.txt");
+    assert!(actual_asset.exists(), "meta.txt not generated");
 
-    // No asset should have been produced -- the marrow's asset() call never
-    // ran because evaluation aborted at the unknown-variable error above.
-    assert!(
-        !build_dir.join("html/meta.txt").exists(),
-        "meta.txt should not exist: compilation was expected to fail before \
-         asset() ran"
-    );
+    let ref_asset = PathBuf::from("ref/cases/marrow_metadata/meta.txt");
+    if env::var("UPDATE_REFERENCES").is_ok() {
+        std::fs::create_dir_all(ref_asset.parent().unwrap()).expect("create ref dir");
+        std::fs::copy(&actual_asset, &ref_asset).expect("write ref");
+        println!("Updated meta.txt reference at {}", ref_asset.display());
+    } else {
+        compare_text_asset(&ref_asset, &actual_asset, "test_marrow_metadata")
+            .expect("meta.txt content mismatch");
+    }
 
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).ok();

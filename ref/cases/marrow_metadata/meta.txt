@@ -1,4 +1,4 @@
-first: title=First date=2025-03-10
-second: title=Second date=-
-third: title=Third date=-
-single:second: title=Second date=-
+first: title=[First] date=2025-03-10
+second: title=[Second] date=-
+third: title=[Third] date=-
+single:second: title=[Second] date=-

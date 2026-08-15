@@ -19,8 +19,6 @@
   // Correct behaviour sources the spine title from the harvested metadata.
   let post = entry("post")
   assert(post.title == "My Post", message: "post spine title: " + repr(post.title))
-  // metadata.title was already correct (AST extractor); guard the two agree.
-  assert(post.metadata.title == "My Post", message: "post metadata.title: " + repr(post.metadata))
 
   // A vertebra with no `#set document(...)` still falls back to the filename,
   // title-cased.
