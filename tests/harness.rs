@@ -79,6 +79,11 @@ use std::path::PathBuf;
 #[test_case("cases/rheo_var_non_string.typ")]
 #[test_case("cases/footnote_reset_per_page")]
 #[test_case("cases/footnote_no_reset")]
+#[test_case("cases/metadata_template_title")]
+#[test_case("cases/metadata_show_and_code_block")]
+#[test_case("cases/metadata_nonliteral_values")]
+#[test_case("cases/metadata_multiple_set_rules")]
+#[test_case("cases/metadata_handle_anchor_display_text")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
@@ -3056,4 +3061,155 @@ fn test_head_control_unrecognized_asset_excluded_and_warns() {
         "Expected a warning about the unrecognized .rheo/future-thing.json \
          control asset, got stdout:\n{stdout}"
     );
+}
+
+/// RED (rheo-tests-metadata-resolution-ess, case 5): a vertebra reads another
+/// vertebra's metadata via `(rheo-context().metadata-of)("chapters:b")`, the
+/// closure the not-yet-implemented Typst-native metadata resolution work is
+/// meant to add (rheo/docs/spikes/typst-native-metadata.md). `metadata-of` is
+/// not a key on today's `rheo-context()` dict, so this is expected to
+/// hard-fail Typst compilation.
+#[test]
+fn test_metadata_of_cross_vertebra_query_not_yet_implemented() {
+    let test_store = PathBuf::from("store/metadata_cross_vertebra_query");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(
+        &PathBuf::from("cases/metadata_cross_vertebra_query"),
+        &test_store,
+    )
+    .expect("Failed to copy fixture");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail: metadata-of doesn't exist on rheo-context() yet"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("metadata-of"),
+        "Expected the compile error to name the missing 'metadata-of' key, got:\n{}",
+        stderr
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// RED (rheo-tests-metadata-resolution-ess, case 6): a vertebra with no `#set
+/// document(...)` at all already correctly falls back to its path-derived
+/// title, with no leakage from a sibling vertebra's title (both true today,
+/// asserted via ordinary Typst `assert()`s). The fixture's `check.typ` also
+/// calls the not-yet-implemented `metadata-of` closure (expecting an empty
+/// dict for a handle with no metadata, mirroring spine-flat's own
+/// empty-dict convention), which hard-fails the whole compile today. Since
+/// the asserts run in one sequential code block before that call, the
+/// stderr naming `metadata-of` (rather than an assertion failure message)
+/// is itself proof the fallback/no-leakage asserts passed first.
+#[test]
+fn test_metadata_no_document_no_leakage_hard_fails_on_metadata_of() {
+    let test_store = PathBuf::from("store/metadata_no_document_no_leakage");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(
+        &PathBuf::from("cases/metadata_no_document_no_leakage"),
+        &test_store,
+    )
+    .expect("Failed to copy fixture");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail: metadata-of doesn't exist on rheo-context() yet"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("metadata-of"),
+        "Expected the compile error to name the missing 'metadata-of' key (proving the \
+         preceding fallback/no-leakage asserts passed), got:\n{}",
+        stderr
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
+/// RED (rheo-tests-metadata-resolution-ess, case 7): a combined `--pdf` build
+/// (the default `SingleCombined` PDF layout) calling `metadata-of` for its own
+/// handle. Per the spike's Q6 finding, beacons must be gated to
+/// `OnePerVertebra` (HTML/EPUB) layouts only, with `metadata-of` returning an
+/// empty dict under combined PDF rather than leaking a sibling's title.
+/// `metadata-of` doesn't exist at all yet, so this hard-fails Typst
+/// compilation today regardless of the PDF-specific gating (which also
+/// doesn't exist yet).
+#[test]
+fn test_metadata_of_combined_pdf_not_yet_implemented() {
+    let test_store = PathBuf::from("store/metadata_combined_pdf_metadata_of");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(
+        &PathBuf::from("cases/metadata_combined_pdf_metadata_of"),
+        &test_store,
+    )
+    .expect("Failed to copy fixture");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--pdf",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail: metadata-of doesn't exist on rheo-context() yet"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("metadata-of"),
+        "Expected the compile error to name the missing 'metadata-of' key, got:\n{}",
+        stderr
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
 }
