@@ -3063,14 +3063,14 @@ fn test_head_control_unrecognized_asset_excluded_and_warns() {
     );
 }
 
-/// RED (rheo-tests-metadata-resolution-ess, case 5): a vertebra reads another
-/// vertebra's metadata via `(rheo-context().metadata-of)("chapters:b")`, the
-/// closure the not-yet-implemented Typst-native metadata resolution work is
-/// meant to add (rheo/docs/spikes/typst-native-metadata.md). `metadata-of` is
-/// not a key on today's `rheo-context()` dict, so this is expected to
-/// hard-fail Typst compilation.
+/// GREEN (rheo-tests-metadata-resolution-ess, case 5): a vertebra reads
+/// another vertebra's metadata via `(rheo-context().metadata-of)("chapters:b")`,
+/// the closure rheo-meta-beacons-2o5 added (rheo/docs/spikes/typst-native-metadata.md
+/// Q1). Originally written expecting a hard compile failure, since
+/// `metadata-of` wasn't a key on `rheo-context()` yet; rewritten now that it
+/// is, to assert on the actually-resolved cross-vertebra value instead.
 #[test]
-fn test_metadata_of_cross_vertebra_query_not_yet_implemented() {
+fn test_metadata_of_cross_vertebra_query() {
     let test_store = PathBuf::from("store/metadata_cross_vertebra_query");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
@@ -3095,15 +3095,17 @@ fn test_metadata_of_cross_vertebra_query_not_yet_implemented() {
         .expect("Failed to run rheo compile");
 
     assert!(
-        !output.status.success(),
-        "Expected compilation to fail: metadata-of doesn't exist on rheo-context() yet"
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let a_html =
+        std::fs::read_to_string(build_dir.join("html/a.html")).expect("read build/html/a.html");
     assert!(
-        stderr.contains("metadata-of"),
-        "Expected the compile error to name the missing 'metadata-of' key, got:\n{}",
-        stderr
+        a_html.contains("B Title"),
+        "expected a.html to contain chapters:b's title (\"B Title\") read via \
+         metadata-of, got:\n{a_html}"
     );
 
     if test_store.exists() {
@@ -3111,18 +3113,19 @@ fn test_metadata_of_cross_vertebra_query_not_yet_implemented() {
     }
 }
 
-/// RED (rheo-tests-metadata-resolution-ess, case 6): a vertebra with no `#set
-/// document(...)` at all already correctly falls back to its path-derived
-/// title, with no leakage from a sibling vertebra's title (both true today,
-/// asserted via ordinary Typst `assert()`s). The fixture's `check.typ` also
-/// calls the not-yet-implemented `metadata-of` closure (expecting an empty
-/// dict for a handle with no metadata, mirroring spine-flat's own
-/// empty-dict convention), which hard-fails the whole compile today. Since
-/// the asserts run in one sequential code block before that call, the
-/// stderr naming `metadata-of` (rather than an assertion failure message)
-/// is itself proof the fallback/no-leakage asserts passed first.
+/// GREEN (rheo-tests-metadata-resolution-ess, case 6): a vertebra with no
+/// `#set document(...)` at all falls back to its path-derived title, with no
+/// leakage from a sibling vertebra's title, and `metadata-of` returns an
+/// empty dict for it (mirroring spine-flat's own empty-dict convention) —
+/// all asserted inline in `check.typ`, invisible (assert-only) like
+/// `cases/spine_document_metadata/check.typ`. Originally written expecting a
+/// hard compile failure (metadata-of didn't exist yet); rewritten now that it
+/// does. `check.typ`'s `metadata-of` call needed wrapping in `#context`
+/// (query() requires a context scope) — a real bug in the original fixture,
+/// found and fixed once metadata-of started actually resolving instead of
+/// erroring on the missing key first.
 #[test]
-fn test_metadata_no_document_no_leakage_hard_fails_on_metadata_of() {
+fn test_metadata_no_document_no_leakage() {
     let test_store = PathBuf::from("store/metadata_no_document_no_leakage");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
@@ -3147,16 +3150,9 @@ fn test_metadata_no_document_no_leakage_hard_fails_on_metadata_of() {
         .expect("Failed to run rheo compile");
 
     assert!(
-        !output.status.success(),
-        "Expected compilation to fail: metadata-of doesn't exist on rheo-context() yet"
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("metadata-of"),
-        "Expected the compile error to name the missing 'metadata-of' key (proving the \
-         preceding fallback/no-leakage asserts passed), got:\n{}",
-        stderr
+        output.status.success(),
+        "compile failed (check.typ's inline asserts panic Typst compilation on failure): {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
     if test_store.exists() {
@@ -3164,16 +3160,19 @@ fn test_metadata_no_document_no_leakage_hard_fails_on_metadata_of() {
     }
 }
 
-/// RED (rheo-tests-metadata-resolution-ess, case 7): a combined `--pdf` build
-/// (the default `SingleCombined` PDF layout) calling `metadata-of` for its own
-/// handle. Per the spike's Q6 finding, beacons must be gated to
-/// `OnePerVertebra` (HTML/EPUB) layouts only, with `metadata-of` returning an
-/// empty dict under combined PDF rather than leaking a sibling's title.
-/// `metadata-of` doesn't exist at all yet, so this hard-fails Typst
-/// compilation today regardless of the PDF-specific gating (which also
-/// doesn't exist yet).
+/// GREEN (rheo-tests-metadata-resolution-ess, case 7): a combined `--pdf`
+/// build (the default `SingleCombined` PDF layout) calling `metadata-of` for
+/// its own handle. Per the spike's Q6 finding, beacons are gated to
+/// `OnePerVertebra` (HTML/EPUB) layouts only, so `metadata-of` returns an
+/// empty dict under combined PDF rather than leaking a sibling's title — no
+/// beacon is ever emitted for this layout to query. Originally written
+/// expecting a hard compile failure (metadata-of didn't exist yet); rewritten
+/// now that it does, asserting the build simply succeeds with no crash (the
+/// empty-dict gating itself is unit-tested directly in `rheo/crates/core`;
+/// this integration case's job is to prove the combined-PDF *build* doesn't
+/// error, which is what actually mattered about Q6's hazard).
 #[test]
-fn test_metadata_of_combined_pdf_not_yet_implemented() {
+fn test_metadata_of_combined_pdf_no_crash() {
     let test_store = PathBuf::from("store/metadata_combined_pdf_metadata_of");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
@@ -3198,15 +3197,19 @@ fn test_metadata_of_combined_pdf_not_yet_implemented() {
         .expect("Failed to run rheo compile");
 
     assert!(
-        !output.status.success(),
-        "Expected compilation to fail: metadata-of doesn't exist on rheo-context() yet"
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let pdf_files: Vec<_> = std::fs::read_dir(build_dir.join("pdf"))
+        .expect("read build/pdf dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "pdf"))
+        .collect();
     assert!(
-        stderr.contains("metadata-of"),
-        "Expected the compile error to name the missing 'metadata-of' key, got:\n{}",
-        stderr
+        !pdf_files.is_empty(),
+        "expected a combined PDF to be written to build/pdf/"
     );
 
     if test_store.exists() {
