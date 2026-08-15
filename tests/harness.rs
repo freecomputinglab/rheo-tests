@@ -2002,6 +2002,89 @@ fn test_marrow() {
     }
 }
 
+/// RED case for the NOT-YET-implemented `rheo-marrow-meta-d5v` (../rheo): today
+/// neither `rheo-metadata(handle)` (rheo-meta-beacons-2o5, reachable only from a
+/// vertebra's own per-vertebra prelude) nor a `rheo-metadata-all()` companion
+/// exists in MARROW scope -- the synthesized bundle root where `.marrow.typ` is
+/// inlined, outside every `#document` block. `cases/marrow_metadata/content/.marrow.typ`
+/// calls both (future-intended) forms while building a `meta.txt` asset, so
+/// compilation is expected to hard-fail. Observed today (verbatim):
+/// `error: unknown variable: rheo-metadata-all` (referenced first in the
+/// fixture, so `rheo-metadata`'s single-handle form is never reached). This
+/// asserts the FAILURE, not a content match -- flip to `compare_text_asset`
+/// against `ref/cases/marrow_metadata/meta.txt` (hand-authored, since
+/// `UPDATE_REFERENCES=1` can't run against code that doesn't compile) once
+/// rheo-marrow-meta-d5v lands.
+#[test]
+fn test_marrow_metadata() {
+    let test_store = PathBuf::from("store").join("marrow_metadata");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow_metadata"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+
+    // `rheo-metadata-all`/`rheo-metadata` are not yet reachable from marrow
+    // scope: compilation must FAIL, not succeed.
+    assert!(
+        !output.status.success(),
+        "expected compile to fail (rheo-metadata-all/rheo-metadata are not yet \
+         reachable from marrow scope per rheo-marrow-meta-d5v) but it succeeded; \
+         if rheo-marrow-meta-d5v has landed, replace this assertion with a \
+         compare_text_asset check against ref/cases/marrow_metadata/meta.txt \
+         (see test_feed_asset_verify/test_marrow for the pattern)"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unknown variable: rheo-metadata-all"),
+        "expected an \"unknown variable: rheo-metadata-all\" compile error, got:\n{stderr}"
+    );
+
+    // No asset should have been produced -- the marrow's asset() call never
+    // ran because evaluation aborted at the unknown-variable error above.
+    assert!(
+        !build_dir.join("html/meta.txt").exists(),
+        "meta.txt should not exist: compilation was expected to fail before \
+         asset() ran"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// A page minted at the bundle root via `rheo-document()` must get the same
 /// per-document init a spine vertebra gets for free from `rheo-page-init`:
 /// `state("rheo-handle")` set to its own handle (not the last spine page's),
