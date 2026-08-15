@@ -1,5 +1,15 @@
-// Regression guard: a string-form document-title set rule must drive the spine
-// title, not the first link body found by the old raw-text scan.
+// Originally a regression guard against a specific historical bug: the old
+// pre-compile raw-text scan could grab a link body ("RiffRaff") as a
+// vertebra's title instead of its real `#set document(title: ...)` value.
+// Since rheo-delete-metadata-scan-t4f, that whole scan is gone -- spine
+// title (`rheo-context().spine-flat[].title`) is now purely path-derived
+// (`Vertebra.title` never reads `#set document(...)` at all, string-form or
+// otherwise), so the old bug class is categorically impossible: nothing
+// reads document body content, link or otherwise, when computing spine
+// title. `post`'s title below is therefore its OWN path-derived name
+// ("Post"), not the literal "My Post" it authors via `#set document(...)` --
+// a real per-vertebra title (rich content, not string) is available via
+// `rheo-metadata`/`metadata-of` instead (see cases/spine_document_metadata).
 //
 // Invisible (assert => none): hard-fails the compile without altering the
 // byte-for-byte HTML reference.
@@ -15,12 +25,11 @@
     matches.first()
   }
 
-  // The bug: the old scan returned the link text ("RiffRaff") as the title.
-  // Correct behaviour sources the spine title from the harvested metadata.
+  // Path-derived, not the authored "My Post" -- see comment above.
   let post = entry("post")
-  assert(post.title == "My Post", message: "post spine title: " + repr(post.title))
+  assert(post.title == "Post", message: "post spine title: " + repr(post.title))
 
-  // A vertebra with no `#set document(...)` still falls back to the filename,
-  // title-cased.
+  // A vertebra with no `#set document(...)` also falls back to the filename,
+  // title-cased -- same code path, so this is unaffected either way.
   assert(entry("plain_file").title == "Plain File", message: "plain_file title: " + repr(entry("plain_file").title))
 }
