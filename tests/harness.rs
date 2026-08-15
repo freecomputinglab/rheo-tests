@@ -3045,14 +3045,15 @@ fn test_head_control_unrecognized_asset_excluded_and_warns() {
     );
 
     // The bead's expectation is that rheo warns about an unrecognized `.rheo/*`
-    // asset (same success-with-warning pattern as `test_warning_formatting`).
-    // This half is speculative about the exact diagnostic rheo will emit, but
-    // "warns rather than silently drops" is the documented intent, so it's
-    // asserted here rather than left purely as a TODO.
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // asset. rheo's tracing subscriber writes to stdout, not stderr (see the
+    // nested-marrow-file warning check earlier in this file), and a `WARN`
+    // line prints the level as that short tag, not the spelled-out word
+    // "warning" (unlike the codespan-reporting diagnostics `test_warning_formatting`
+    // checks) — so this asserts on the actual message content instead.
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("warning"),
+        stdout.contains("WARN") && stdout.contains("unrecognized control asset"),
         "Expected a warning about the unrecognized .rheo/future-thing.json \
-         control asset, got stderr:\n{stderr}"
+         control asset, got stdout:\n{stdout}"
     );
 }
