@@ -84,6 +84,7 @@ use std::path::PathBuf;
 #[test_case("cases/metadata_nonliteral_values")]
 #[test_case("cases/metadata_multiple_set_rules")]
 #[test_case("cases/metadata_handle_anchor_display_text")]
+#[test_case("cases/document_date_incomplete.typ")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);

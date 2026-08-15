@@ -38,8 +38,61 @@
   m.handle + ": title=" + title + " date=" + date
 }
 
+// rheo-tests-date-matrix-vjw: date-resolution regression guards, cases 1-4.
+// Cases 1 (literal), 2 (none/auto), and 3 (templated) are fully deterministic
+// -- their vertebrae (date_literal, date_none, date_auto, date_templated) are
+// folded into the same `rheo-metadata-all()` sweep as the pre-existing
+// first/second/third vertebrae, and their resolved dates are pinned in
+// meta.txt below like any other case here.
+//
+// Case 4 (date_today, `datetime.today()`) is NOT deterministic -- its
+// resolved date is today's real date, which varies by build day. It is
+// EXCLUDED from the `rheo-metadata-all()` sweep that feeds meta.txt (a
+// ref-compared file), and instead only SHAPE-asserted below (present, and a
+// real `datetime`, not `none`/`auto`) -- asserting a literal value, or
+// writing one into a committed reference, would break on every future test
+// run on a different day. `assert()` hard-fails the whole compile on a
+// regression, so a passing compile IS this case's pass signal.
 #context {
-  let all-lines = rheo-metadata-all().map(line).join("\n")
+  let all-metadata = rheo-metadata-all()
+
+  let today-entry = all-metadata.find(m => m.handle == "date_today")
+  assert(today-entry != none, message: "date_today entry missing from rheo-metadata-all()")
+  assert("date" in today-entry, message: "date_today: no date key: " + repr(today-entry))
+  assert(
+    type(today-entry.date) == datetime,
+    message: "date_today: date not a datetime: " + repr(today-entry),
+  )
+
+  // Case 2 belt-and-suspenders: date_none and date_auto must be
+  // indistinguishable -- both have no `date` key at all, and (since neither
+  // authors anything else) the same full set of keys as each other.
+  let none-entry = all-metadata.find(m => m.handle == "date_none")
+  let auto-entry = all-metadata.find(m => m.handle == "date_auto")
+  assert("date" not in none-entry, message: "date_none: date key present: " + repr(none-entry))
+  assert("date" not in auto-entry, message: "date_auto: date key present: " + repr(auto-entry))
+  assert(
+    none-entry.keys() == auto-entry.keys(),
+    message: "date_none vs date_auto: differing keys: " + repr(none-entry) + " vs " + repr(auto-entry),
+  )
+
+  // Case 1: literal date resolves to exactly the value that was set.
+  let literal-entry = all-metadata.find(m => m.handle == "date_literal")
+  assert(
+    literal-entry.date == datetime(year: 2025, month: 1, day: 15),
+    message: "date_literal: " + repr(literal-entry),
+  )
+
+  // Case 3: date set only inside `#show: book` (template.typ) still resolves
+  // to the real templated value.
+  let templated-entry = all-metadata.find(m => m.handle == "date_templated")
+  assert(
+    templated-entry.date == datetime(year: 2024, month: 11, day: 5),
+    message: "date_templated: " + repr(templated-entry),
+  )
+
+  // Deterministic lines only -- excludes date_today (see comment above).
+  let all-lines = all-metadata.filter(m => m.handle != "date_today").map(line).join("\n")
 
   // Single-handle form, exercised separately so this case covers BOTH forms
   // in scope for rheo-marrow-meta-d5v, not just -all(). "second" has a title
