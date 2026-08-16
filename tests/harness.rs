@@ -79,6 +79,7 @@ use std::path::PathBuf;
 #[test_case("cases/rheo_var_non_string.typ")]
 #[test_case("cases/footnote_reset_per_page")]
 #[test_case("cases/footnote_no_reset")]
+#[test_case("cases/bundle_multi_bibliography")]
 #[test_case("cases/metadata_template_title")]
 #[test_case("cases/metadata_show_and_code_block")]
 #[test_case("cases/metadata_nonliteral_values")]
