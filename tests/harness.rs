@@ -1611,6 +1611,95 @@ fn migrate_converts_vertebrae_to_exclude() {
     );
 }
 
+/// `rheo migrate` REPORTS (never rewrites) the removed `[html] feed_*`
+/// rheo.toml keys and the removed `rheo-*` `.typ` variable bindings, since
+/// feed configuration does not map one-to-one onto `@rheo/rssfeed`'s Typst
+/// API. See rheo bead `rheo-migrate-feed-dhe`.
+#[test]
+fn migrate_reports_removed_feed_surface() {
+    let test_case = TestCase::new("cases/migrate_feed_removal");
+    let original_project_path = test_case.project_path();
+
+    let test_store = PathBuf::from("store").join("migrate_feed_removal");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let toml_before =
+        std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    let a_before = std::fs::read_to_string(test_store.join("a.typ")).expect("read a.typ");
+    let b_before = std::fs::read_to_string(test_store.join("b.typ")).expect("read b.typ");
+
+    // No --apply: this pass is report-only, so there is nothing to apply anyway.
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap()])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate");
+    assert!(
+        output.status.success(),
+        "migrate failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // All three retired [html] keys named.
+    assert!(
+        stdout.contains("feed_base_url"),
+        "feed_base_url finding missing:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("feed_author"),
+        "feed_author finding missing:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("feed_include"),
+        "feed_include finding missing:\n{stdout}"
+    );
+
+    // Both removed `.typ` bindings named, each with its file:line location.
+    assert!(
+        stdout.contains("a.typ:1") && stdout.contains("rheo-feed-exclude"),
+        "rheo-feed-exclude finding missing its location:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("b.typ:1") && stdout.contains("rheo-author"),
+        "rheo-author finding missing its location:\n{stdout}"
+    );
+
+    // rheo-author is reported separately from the rheo-feed-* group, with
+    // its own real-rewrite replacement, not a "moved to a package" pointer.
+    let author_line = stdout
+        .lines()
+        .find(|l| l.contains("rheo-author"))
+        .unwrap_or_else(|| panic!("no line reports rheo-author:\n{stdout}"));
+    assert!(
+        author_line.contains("#set document(author:"),
+        "rheo-author finding should point at #set document(author:):\n{author_line}"
+    );
+    assert!(
+        !author_line.contains("rssfeed"),
+        "rheo-author finding should not be grouped with the rssfeed pointer:\n{author_line}"
+    );
+
+    // Every rheo-feed-*/feed_* finding points at the replacement package.
+    assert!(
+        stdout.contains("@rheo/rssfeed"),
+        "no finding mentions @rheo/rssfeed:\n{stdout}"
+    );
+
+    // Report-only: both files are byte-identical after the run.
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    let a_after = std::fs::read_to_string(test_store.join("a.typ")).expect("read a.typ");
+    let b_after = std::fs::read_to_string(test_store.join("b.typ")).expect("read b.typ");
+    assert_eq!(toml_before, toml_after, "rheo.toml must be untouched");
+    assert_eq!(a_before, a_after, "a.typ must be untouched");
+    assert_eq!(b_before, b_after, "b.typ must be untouched");
+}
+
 /// The built-in default stylesheet ships as a real linked `.css` asset (not an
 /// inline `<style>` block), with a depth-relative `<link href>` on nested pages.
 /// See rheo-u7i.
