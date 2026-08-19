@@ -1832,6 +1832,102 @@ fn test_feed_asset_verify() {
     }
 }
 
+/// Hand-rolls an Atom feed from `content/.marrow.typ` using only the three
+/// port primitives (`<rheo-content>` transclusion, `rheo-metadata-all()`,
+/// `sys.inputs.rheo-context.spine-flat`) -- no `@rheo` package, so this
+/// fixture must not depend on the Typst package cache. Proves the primitives
+/// are sufficient to replace the deleted Rust feed generator (rheo bead
+/// `rheo-drop-feed-bdo`). See rheo-tests-marrow-feed-g0y.
+///
+/// Parity deltas against the old Rust-generated
+/// `ref/cases/feed_asset_verify/feed.xml` (deliberate, not bugs):
+/// - Entry `<title>` is the PATH-DERIVED spine title ("Post A"/"Post B")
+///   instead of the authored title ("Alpha"/"Beta"). Typst has no
+///   content-to-plain-text primitive (`document.title` is Content, and
+///   `str()` rejects Content -- confirmed in `cases/marrow_metadata`), so a
+///   marrow reads `rheo-context().spine-flat`'s title (always path-derived,
+///   already a plain `str`) rather than trying to flatten the real one. A
+///   future package wanting the authored title as text would need a
+///   `<rheo-content select="...">` against a heading element.
+/// - Feed-level `<title>` is a literal string written in the marrow
+///   (`"Marrow Atom Feed"`) instead of derived from `rheo.toml`'s
+///   `feed_title`/spine title/project name cascade -- that cascade doesn't
+///   exist for this path; publication facts live in Typst now, not
+///   `rheo.toml`.
+/// - `<author>` stays `"Rheo"` (a literal in the marrow now, not a
+///   `feed_author` config default), matching the old default's value even
+///   though it is no longer *derived* the same way.
+/// - Timestamps are byte-identical in format (`+00:00` offset) -- computed
+///   by `rfc3339()` from a real `datetime` set via `#set document(date:
+///   ...)`, not parsed from a removed `rheo-feed-updated` string.
+/// - Entry `<content type="html">` is byte-identical -- sourced via
+///   `<rheo-content page="..."/>` transclusion (the compiled page's `<body>`
+///   inner HTML, escaped) instead of a Rust-side body reader.
+#[test]
+fn test_marrow_atom_feed() {
+    use rheo_tests::helpers::comparison::compare_text_asset;
+
+    let test_store = PathBuf::from("store").join("marrow_atom_feed");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("clean store");
+    }
+    std::fs::create_dir_all(&test_store).expect("create store");
+    copy_project_to_test_store(&PathBuf::from("cases/marrow_atom_feed"), &test_store)
+        .expect("copy fixture");
+
+    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
+    let store_toml = test_store.join("rheo.toml");
+    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
+    let patched = content.replace(
+        &format!(
+            "version = \"{}\"",
+            content
+                .lines()
+                .find_map(|l| l
+                    .strip_prefix("version = \"")
+                    .and_then(|s| s.strip_suffix('"')))
+                .unwrap_or("")
+        ),
+        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+    );
+    std::fs::write(&store_toml, patched).expect("patch version");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual_feed = build_dir.join("html/feed.xml");
+    assert!(actual_feed.exists(), "feed.xml not generated");
+
+    let ref_feed = PathBuf::from("ref/cases/marrow_atom_feed/feed.xml");
+    if env::var("UPDATE_REFERENCES").is_ok() {
+        std::fs::create_dir_all(ref_feed.parent().unwrap()).expect("create ref dir");
+        std::fs::copy(&actual_feed, &ref_feed).expect("write ref");
+        println!("Updated feed.xml reference at {}", ref_feed.display());
+    } else {
+        compare_text_asset(&ref_feed, &actual_feed, "test_marrow_atom_feed")
+            .expect("feed.xml content mismatch");
+    }
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// Marrow contributions: `content/.marrow.typ` is emitted at the Typst bundle
 /// root, OUTSIDE every `#document` block rheo synthesizes, so its `document()`
 /// and `asset()` calls mint extra output files. Marrow sits inside the spine
