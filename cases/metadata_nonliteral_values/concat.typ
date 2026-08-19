@@ -1,7 +1,8 @@
-// Non-literal `title` RHS: string concatenation. Compiled title is "ab", but
-// rheo's scan drops non-literal argument values silently
-// (docs/limitations.md:53, `title: "a" + "b"` is explicitly named as an
-// example that yields no harvested value).
+// Non-literal `title` RHS: string concatenation. Compiled title is "ab".
+// rheo-context().spine-flat's title is always path-derived, never read from
+// `#set document(...)` in any form -- so this vertebra's spine entry is
+// "Concat" regardless. The real title is reachable via
+// `rheo-metadata`/`metadata-of` instead (see cases/spine_document_metadata).
 #set document(title: "a" + "b")
 
 = Concat
