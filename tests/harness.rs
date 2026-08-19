@@ -23,10 +23,8 @@ use std::path::PathBuf;
 #[test_case("cases/escape_form_nested")]
 #[test_case("cases/deep_nested_href")]
 #[test_case("cases/section_handle_nesting")]
-#[test_case("cases/feed_nested_href")]
 #[test_case("cases/epub_nested_spine")]
 #[test_case("cases/bundle_ref_cross_directory")]
-#[test_case("cases/feed_document_defaults")]
 #[test_case("cases/epub_inferred_spine")]
 #[test_case("cases/link_path_edge_cases")]
 #[test_case("cases/link_transformation")]
@@ -68,11 +66,6 @@ use std::path::PathBuf;
 #[test_case("cases/document_title_string_form")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
-#[test_case("cases/atom_feed_basic")]
-#[test_case("cases/atom_feed_author")]
-#[test_case("cases/atom_feed_title")]
-#[test_case("cases/atom_feed_title_fallback")]
-#[test_case("cases/atom_feed_content_dir")]
 #[test_case("cases/html_css_injection")]
 #[test_case("cases/head_hoist")]
 #[test_case("cases/head_control")]
@@ -1761,77 +1754,6 @@ fn test_external_config_flag() {
     );
 }
 
-/// Content-verifies a generated non-HTML asset — the Atom `feed.xml` — against a
-/// committed reference, closing the gap that `verify_html_output` only diffs
-/// `.html` files (feed.xml is copied into refs and presence-checked, never
-/// content-compared). The fixture dates every entry with `rheo-feed-updated`, so
-/// feed.xml is deterministic (no output-mtime fallback) and safe to byte-compare.
-/// Regenerate the reference with `UPDATE_REFERENCES=1`. See rheo-tests-rcx.
-#[test]
-fn test_feed_asset_verify() {
-    use rheo_tests::helpers::comparison::compare_text_asset;
-
-    let test_store = PathBuf::from("store").join("feed_asset_verify");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(&PathBuf::from("cases/feed_asset_verify"), &test_store)
-        .expect("copy fixture");
-
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
-    assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let actual_feed = build_dir.join("html/feed.xml");
-    assert!(actual_feed.exists(), "feed.xml not generated");
-
-    let ref_feed = PathBuf::from("ref/cases/feed_asset_verify/feed.xml");
-    if env::var("UPDATE_REFERENCES").is_ok() {
-        std::fs::create_dir_all(ref_feed.parent().unwrap()).expect("create ref dir");
-        std::fs::copy(&actual_feed, &ref_feed).expect("write ref");
-        println!("Updated feed.xml reference at {}", ref_feed.display());
-    } else {
-        compare_text_asset(&ref_feed, &actual_feed, "test_feed_asset_verify")
-            .expect("feed.xml content mismatch");
-    }
-
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
-}
-
 /// Hand-rolls an Atom feed from `content/.marrow.typ` using only the three
 /// port primitives (`<rheo-content>` transclusion, `rheo-metadata-all()`,
 /// `sys.inputs.rheo-context.spine-flat`) -- no `@rheo` package, so this
@@ -1839,8 +1761,9 @@ fn test_feed_asset_verify() {
 /// are sufficient to replace the deleted Rust feed generator (rheo bead
 /// `rheo-drop-feed-bdo`). See rheo-tests-marrow-feed-g0y.
 ///
-/// Parity deltas against the old Rust-generated
-/// `ref/cases/feed_asset_verify/feed.xml` (deliberate, not bugs):
+/// Parity deltas against the old Rust-generated feed.xml (its fixture and
+/// reference are deleted, see rheo-tests-drop-feed-cases-jdr; deltas
+/// recorded here since nothing else pins them):
 /// - Entry `<title>` is the PATH-DERIVED spine title ("Post A"/"Post B")
 ///   instead of the authored title ("Alpha"/"Beta"). Typst has no
 ///   content-to-plain-text primitive (`document.title` is Content, and
@@ -2055,7 +1978,7 @@ fn test_marrow() {
 /// both forms (wrapped in `#context`, which `query()`-backed helpers require)
 /// while building a `meta.txt` asset. Originally written expecting a hard
 /// compile failure (neither name existed in marrow scope yet); rewritten now
-/// that they do, content-comparing the built asset like `test_feed_asset_verify`
+/// that they do, content-comparing the built asset like `test_marrow_atom_feed`
 /// does. Along the way, found and fixed two real bugs in the original RED
 /// fixture: (1) the marrow calls weren't wrapped in `#context`, and (2) `.title`
 /// was string-concatenated directly, but `document.title` is CONTENT, not a
@@ -2445,94 +2368,6 @@ fn test_marrow_asset_embedded_in_epub() {
     }
 }
 
-/// A marrow-contributed page is excluded from the Atom feed by default (it
-/// has no source vertebra, so no `rheo-feed-title`/`rheo-feed-updated` to
-/// read), with an explicit `[[html.feed_include]]` rheo.toml opt-in to bring
-/// one back with a title. Bespoke rather than `#[test_case]` because it
-/// asserts entry counts/titles on feed.xml, not a snapshot diff. See rheo bead
-/// rheo-feed-contributed-2i3.
-#[test]
-fn test_marrow_feed_exclusion_and_opt_in() {
-    fn compile_feed(case_name: &str) -> String {
-        let test_store = PathBuf::from("store").join(case_name);
-        if test_store.exists() {
-            std::fs::remove_dir_all(&test_store).expect("clean store");
-        }
-        std::fs::create_dir_all(&test_store).expect("create store");
-        copy_project_to_test_store(&PathBuf::from("cases").join(case_name), &test_store)
-            .expect("copy fixture");
-
-        // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-        let store_toml = test_store.join("rheo.toml");
-        let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-        let patched = content.replace(
-            &format!(
-                "version = \"{}\"",
-                content
-                    .lines()
-                    .find_map(|l| l
-                        .strip_prefix("version = \"")
-                        .and_then(|s| s.strip_suffix('"')))
-                    .unwrap_or("")
-            ),
-            &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-        );
-        std::fs::write(&store_toml, patched).expect("patch version");
-
-        let build_dir = test_store.join("build");
-        let output = rheo_cli_command()
-            .args([
-                "compile",
-                test_store.to_str().unwrap(),
-                "--html",
-                "--build-dir",
-                build_dir.to_str().unwrap(),
-            ])
-            .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-            .output()
-            .expect("run rheo compile");
-        assert!(
-            output.status.success(),
-            "compile failed for {case_name}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        let feed = std::fs::read_to_string(build_dir.join("html/feed.xml"))
-            .unwrap_or_else(|e| panic!("read feed.xml for {case_name}: {e}"));
-
-        if test_store.exists() {
-            std::fs::remove_dir_all(&test_store).ok();
-        }
-        feed
-    }
-
-    let excluded_feed = compile_feed("marrow_feed_default_exclude");
-    assert_eq!(
-        excluded_feed.matches("<entry>").count(),
-        1,
-        "expected only the index entry, feed:\n{excluded_feed}"
-    );
-    assert!(
-        !excluded_feed.contains("extra/hello.html"),
-        "marrow-contributed page leaked into the feed:\n{excluded_feed}"
-    );
-
-    let opt_in_feed = compile_feed("marrow_feed_include_opt_in");
-    assert_eq!(
-        opt_in_feed.matches("<entry>").count(),
-        2,
-        "expected index + opted-in marrow entry, feed:\n{opt_in_feed}"
-    );
-    assert!(
-        opt_in_feed.contains("<title>Hello Extra</title>"),
-        "opted-in marrow entry missing its configured title, feed:\n{opt_in_feed}"
-    );
-    assert!(
-        opt_in_feed.contains("extra/hello.html"),
-        "opted-in marrow entry missing its href, feed:\n{opt_in_feed}"
-    );
-}
-
 /// `--emit-bundle-source` writes the synthesized Typst bundle main to
 /// `<build_dir>/<plugin>/.rheo-bundle.typ` — a read-only debug artifact for
 /// diagnosing marrow/spine authoring errors. Off by default, and must not
@@ -2693,132 +2528,6 @@ fn test_nested_marrow_file_warns() {
     );
 }
 
-/// The Atom feed harvests each entry's body from the first matching content
-/// region, in precedence order: (1) the first `<main>`, else (2) the first
-/// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is
-/// invisible to `verify_html_output` (it only diffs `.html`, never `feed.xml`),
-/// so assert on the generated `feed.xml` directly. See
-/// rheo/crates/core/src/util/html.rs `feed_content_inner_html`.
-#[test]
-fn test_feed_content_region_precedence() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-
-    // Tier 1: a `<main>` wins even though nav/footer chrome is also present.
-    std::fs::write(
-        project_path.join("main_tier.typ"),
-        "#let rheo-feed-title = \"Main Tier\"\n\
-         #let rheo-feed-updated = \"2025-03-01T00:00:00Z\"\n\n\
-         #html.elem(\"nav\", [Chrome MAINNAV])\n\
-         #html.elem(\"main\", [Article body MAINBODY])\n\
-         #html.elem(\"footer\", [Chrome MAINFOOT])\n",
-    )
-    .expect("write main_tier.typ");
-
-    // Tier 2: no `<main>`, so the `.rheo-feed-content` element wins over chrome.
-    std::fs::write(
-        project_path.join("class_tier.typ"),
-        "#let rheo-feed-title = \"Class Tier\"\n\
-         #let rheo-feed-updated = \"2025-03-02T00:00:00Z\"\n\n\
-         #html.elem(\"nav\", [Chrome CLASSNAV])\n\
-         #html.elem(\"div\", attrs: (class: \"rheo-feed-content\"), [Scoped body CLASSBODY])\n\
-         #html.elem(\"footer\", [Chrome CLASSFOOT])\n",
-    )
-    .expect("write class_tier.typ");
-
-    // Tier 3: neither marker, so the whole `<body>` is used.
-    std::fs::write(
-        project_path.join("body_tier.typ"),
-        "#let rheo-feed-title = \"Body Tier\"\n\
-         #let rheo-feed-updated = \"2025-03-03T00:00:00Z\"\n\n\
-         = Body Tier\n\n\
-         Whole body BODYONLY text.\n",
-    )
-    .expect("write body_tier.typ");
-
-    // feed_base_url triggers feed generation. Explicit rheo-feed-updated on every
-    // entry keeps the feed-level <updated> off the non-deterministic mtime path.
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html]\n\
-             feed_base_url = \"https://example.com\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("write rheo.toml");
-
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
-    assert!(
-        output.status.success(),
-        "Compilation failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let feed =
-        std::fs::read_to_string(build_dir.join("html/feed.xml")).expect("feed.xml not generated");
-
-    // Inner (html-escaped) text of the <content> for the entry with this title.
-    // Marker words are plain ASCII, so they survive escaping and `contains` works.
-    let entry_content = |title: &str| -> String {
-        let marker = format!("<title>{title}</title>");
-        let idx = feed
-            .find(&marker)
-            .unwrap_or_else(|| panic!("no entry titled {title} in feed:\n{feed}"));
-        let rest = &feed[idx..];
-        let cstart = rest.find("<content").expect("content open tag");
-        let inner_start = cstart + rest[cstart..].find('>').expect("content '>'") + 1;
-        let inner_end = inner_start
-            + rest[inner_start..]
-                .find("</content>")
-                .expect("content close");
-        rest[inner_start..inner_end].to_string()
-    };
-
-    // Tier 1: <main> body only; nav/footer chrome excluded.
-    let main_c = entry_content("Main Tier");
-    assert!(
-        main_c.contains("MAINBODY"),
-        "main-tier content missing body: {main_c}"
-    );
-    assert!(
-        !main_c.contains("MAINNAV") && !main_c.contains("MAINFOOT"),
-        "main-tier content should exclude chrome outside <main>: {main_c}"
-    );
-
-    // Tier 2: .rheo-feed-content body only; nav/footer chrome excluded.
-    let class_c = entry_content("Class Tier");
-    assert!(
-        class_c.contains("CLASSBODY"),
-        "class-tier content missing body: {class_c}"
-    );
-    assert!(
-        !class_c.contains("CLASSNAV") && !class_c.contains("CLASSFOOT"),
-        "class-tier content should exclude chrome outside .rheo-feed-content: {class_c}"
-    );
-
-    // Tier 3: whole body.
-    let body_c = entry_content("Body Tier");
-    assert!(
-        body_c.contains("BODYONLY"),
-        "body-tier content missing body: {body_c}"
-    );
-}
-
 /// CSS/JS that enters rheo through a package (auto-detected from the package's
 /// manifest) must also get depth-relative `<link>`/`<script>` hrefs on nested
 /// pages, exactly like user and default assets. Network: downloads/caches
@@ -2882,7 +2591,7 @@ fn test_package_assets_depth_relative_on_nested_pages() {
 /// - `wrapped.html` wraps its article in `<main>`, with distinct chrome text
 ///   (`WRAPPEDCHROME`) in a `<nav>`/`<footer>` outside it, so scoping to
 ///   `<main>` must exclude the chrome.
-/// - `plain.html` has neither a `<main>` nor a `.rheo-feed-content` element,
+/// - `plain.html` has neither a `<main>` nor a `.rheo-content` element,
 ///   so its content region falls through to the whole `<body>` (which does
 ///   include a copy of the `WRAPPEDCHROME` text, as ordinary body prose this
 ///   time, proving the two pages' entries are exclusive: chrome text should

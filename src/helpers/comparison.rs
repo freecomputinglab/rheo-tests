@@ -224,9 +224,10 @@ fn compare_html_content(reference: &Path, actual: &Path, test_name: &str) -> Res
 /// committed reference, emitting a line diff on mismatch.
 ///
 /// Unlike [`compare_html_content`] this performs no tag/attribute normalization —
-/// the asset must be deterministic. Feed fixtures achieve that by setting an
-/// explicit `rheo-feed-updated` on every entry, so `feed.xml` never falls back
-/// to the non-deterministic output-file mtime. Reusable for other asset kinds.
+/// the asset must be deterministic. `cases/marrow_atom_feed` achieves that by
+/// giving every vertebra an explicit `#set document(date: ...)`, so `feed.xml`
+/// never falls back to the non-deterministic output-file mtime. Reusable for
+/// other asset kinds.
 pub fn compare_text_asset(reference: &Path, actual: &Path, label: &str) -> Result<(), String> {
     let ref_content = fs::read_to_string(reference)
         .map_err(|e| format!("Failed to read reference {}: {}", reference.display(), e))?;

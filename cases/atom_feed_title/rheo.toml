@@ -1,9 +1,0 @@
-version = "0.4.0"
-formats = ["html"]
-
-[html.spine]
-title = "Spine Blog"
-
-[html]
-feed_base_url = "https://example.com"
-feed_title = "Custom Feed Title"
