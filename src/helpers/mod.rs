@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod comparison;
+pub mod devserver;
 pub mod fixtures;
 pub mod markers;
 pub mod reference;

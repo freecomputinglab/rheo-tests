@@ -3002,6 +3002,7 @@ name = "rheo-tests"
 version = "0.3.1"
 dependencies = [
  "html5ever",
+ "libc",
  "lopdf",
  "markup5ever_rcdom",
  "ntest",
