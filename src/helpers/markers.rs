@@ -22,6 +22,11 @@ pub struct TestMetadata {
     pub expect: Option<String>,
     /// Required error patterns to check in stderr (for error cases)
     pub error_patterns: Vec<String>,
+    /// Required warning patterns to check (stdout+stderr) on a successful build
+    pub warn_patterns: Vec<String>,
+    /// Keep this case's `rheo.toml` `version` verbatim instead of the harness's
+    /// usual patch to the current crate version (to exercise a stale version)
+    pub keep_version: bool,
 }
 
 impl Default for TestMetadata {
@@ -31,8 +36,19 @@ impl Default for TestMetadata {
             description: None,
             expect: None,
             error_patterns: vec![],
+            warn_patterns: vec![],
+            keep_version: false,
         }
     }
+}
+
+/// Parses a comma-separated list of quoted patterns, e.g. `"a", "b c"` -> `["a", "b c"]`.
+fn parse_quoted_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .map(|p| p.trim_matches('"').to_string())
+        .collect()
 }
 
 /// Checks if a line contains the @rheo:test marker
@@ -65,6 +81,12 @@ pub fn parse_test_metadata(source: &str) -> Option<TestMetadata> {
             continue;
         }
 
+        // Check for @rheo:keep-version marker
+        if comment == "@rheo:keep-version" {
+            metadata.keep_version = true;
+            continue;
+        }
+
         // Parse @rheo:formats
         if let Some(formats_str) = comment.strip_prefix("@rheo:formats") {
             let formats_str = formats_str.trim();
@@ -92,16 +114,16 @@ pub fn parse_test_metadata(source: &str) -> Option<TestMetadata> {
         }
 
         // Parse @rheo:error-patterns
+        // Example: @rheo:error-patterns "error", "cannot add", "│"
         if let Some(patterns_str) = comment.strip_prefix("@rheo:error-patterns") {
-            // Patterns are comma-separated quoted strings
-            // Example: @rheo:error-patterns "error", "cannot add", "│"
-            let patterns_str = patterns_str.trim();
-            metadata.error_patterns = patterns_str
-                .split(',')
-                .map(|p| p.trim())
-                .filter(|p| !p.is_empty())
-                .map(|p| p.trim_matches('"').to_string()) // Remove quotes
-                .collect();
+            metadata.error_patterns = parse_quoted_list(patterns_str.trim());
+            continue;
+        }
+
+        // Parse @rheo:warn-patterns (same shape as error-patterns, checked on
+        // a successful build instead of a failing one)
+        if let Some(patterns_str) = comment.strip_prefix("@rheo:warn-patterns") {
+            metadata.warn_patterns = parse_quoted_list(patterns_str.trim());
             continue;
         }
     }
@@ -248,5 +270,29 @@ mod tests {
 = Content"#;
         let metadata = parse_test_metadata(source).unwrap();
         assert_eq!(metadata.error_patterns, vec!["pattern one", "pattern two"]);
+    }
+
+    #[test]
+    fn test_parse_test_metadata_with_warn_patterns() {
+        let source = r#"// @rheo:test
+// @rheo:warn-patterns "retired", "`merge`"
+= Content"#;
+        let metadata = parse_test_metadata(source).unwrap();
+        assert_eq!(metadata.warn_patterns, vec!["retired", "`merge`"]);
+        assert!(metadata.error_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_parse_test_metadata_with_keep_version() {
+        let source = "// @rheo:test\n// @rheo:keep-version\n= Content";
+        let metadata = parse_test_metadata(source).unwrap();
+        assert!(metadata.keep_version);
+    }
+
+    #[test]
+    fn test_parse_test_metadata_keep_version_defaults_false() {
+        let source = "// @rheo:test\n= Content";
+        let metadata = parse_test_metadata(source).unwrap();
+        assert!(!metadata.keep_version);
     }
 }

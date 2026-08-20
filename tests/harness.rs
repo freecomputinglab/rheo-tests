@@ -10,6 +10,20 @@ use rheo_tests::helpers::{
 use std::env;
 use std::path::PathBuf;
 
+/// Asserts every pattern is a substring of `output`; `label` names the kind of
+/// pattern (e.g. `"error"`, `"warning"`) for the failure message.
+fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
+    for pattern in patterns {
+        assert!(
+            output.contains(pattern.as_str()),
+            "Expected {} output to contain pattern '{}', but it was not found.\nFull output:\n{}",
+            label,
+            pattern,
+            output
+        );
+    }
+}
+
 #[test_case("examples/blog_site")]
 #[test_case("examples/blog_post")]
 #[test_case("examples/cover-letter.typ")]
@@ -79,6 +93,9 @@ use std::path::PathBuf;
 #[test_case("cases/metadata_multiple_set_rules")]
 #[test_case("cases/metadata_handle_anchor_display_text")]
 #[test_case("cases/document_date_incomplete.typ")]
+#[test_case("cases/retired_key_merge_warns")]
+#[test_case("cases/version_mismatch_migrate_warns")]
+#[test_case("cases/retired_feed_keys_warn")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
@@ -109,9 +126,15 @@ fn run_test_case(name: &str) {
             .expect("Failed to copy project to test store");
     }
 
-    // Patch rheo.toml version to match current crate version
+    let keep_version = test_case
+        .metadata()
+        .map(|m| m.keep_version)
+        .unwrap_or(false);
+
+    // Patch rheo.toml version to match current crate version, unless the case
+    // opts out (`@rheo:keep-version`) to exercise a deliberately stale version.
     let store_toml = test_store.join("rheo.toml");
-    if store_toml.exists() {
+    if store_toml.exists() && !keep_version {
         let content = std::fs::read_to_string(&store_toml).expect("Failed to read rheo.toml");
         let patched = content.replace(
             &format!(
@@ -217,17 +240,8 @@ fn run_test_case(name: &str) {
         );
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-
-        // Check all required error patterns
         if let Some(metadata) = test_case.metadata() {
-            for pattern in &metadata.error_patterns {
-                assert!(
-                    stderr.contains(pattern),
-                    "Expected error output to contain pattern '{}', but it was not found.\nFull stderr:\n{}",
-                    pattern,
-                    stderr
-                );
-            }
+            assert_patterns_present(&metadata.error_patterns, &stderr, "error");
         }
 
         // For error cases, skip reference comparison and return early
@@ -245,6 +259,18 @@ fn run_test_case(name: &str) {
             test_name,
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    // A successful build may still be required to warn (e.g. retired-key or
+    // version-mismatch notices). The tracing subscriber writes those to
+    // stdout, not stderr, so check both streams combined.
+    if let Some(metadata) = test_case.metadata() {
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_patterns_present(&metadata.warn_patterns, &combined, "warning");
     }
 
     // let run_epub = env::var("RUN_EPUB_TESTS").is_ok() || env::var("RUN_EPUB_TESTS").is_err();
