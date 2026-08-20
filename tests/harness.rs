@@ -98,6 +98,8 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/version_mismatch_migrate_warns")]
 #[test_case("cases/retired_feed_keys_warn")]
 #[test_case("cases/font_dirs_disables_autoscan")]
+#[test_case("cases/transclude_missing_page")]
+#[test_case("cases/transclude_attr_gt")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
