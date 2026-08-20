@@ -1613,7 +1613,7 @@ fn migrate_converts_vertebrae_to_exclude() {
 
 /// `rheo migrate` REPORTS (never rewrites) the removed `[html] feed_*`
 /// rheo.toml keys and the removed `rheo-*` `.typ` variable bindings, since
-/// feed configuration does not map one-to-one onto `@rheo/rssfeed`'s Typst
+/// feed configuration does not map one-to-one onto `@rheo/feeds`'s Typst
 /// API. See rheo bead `rheo-migrate-feed-dhe`.
 #[test]
 fn migrate_reports_removed_feed_surface() {
@@ -1681,14 +1681,14 @@ fn migrate_reports_removed_feed_surface() {
         "rheo-author finding should point at #set document(author:):\n{author_line}"
     );
     assert!(
-        !author_line.contains("rssfeed"),
-        "rheo-author finding should not be grouped with the rssfeed pointer:\n{author_line}"
+        !author_line.contains("@rheo/feeds"),
+        "rheo-author finding should not be grouped with the @rheo/feeds pointer:\n{author_line}"
     );
 
     // Every rheo-feed-*/feed_* finding points at the replacement package.
     assert!(
-        stdout.contains("@rheo/rssfeed"),
-        "no finding mentions @rheo/rssfeed:\n{stdout}"
+        stdout.contains("@rheo/feeds"),
+        "no finding mentions @rheo/feeds:\n{stdout}"
     );
 
     // Report-only: both files are byte-identical after the run.
