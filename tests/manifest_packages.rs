@@ -1,4 +1,8 @@
-use rheo_core::plugins::{detect_manifest_package_assets_in_dirs, detect_package_marrow_in_dirs};
+use rheo_core::config::manifest_version;
+use rheo_core::plugins::{
+    check_package_min_versions_in_dirs, detect_manifest_package_assets_in_dirs,
+    detect_package_marrow_in_dirs,
+};
 use rheo_tests::helpers::cli::rheo_cli_command;
 
 #[test]
@@ -929,4 +933,140 @@ fn e2e_empty_package_marrow_is_a_no_op() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(build_dir.join("html/main.html").exists());
+}
+
+/// Stage `{ns}/{name}/{version}/typst.toml` with the given body under `search_root`.
+fn stage_manifest(search_root: &std::path::Path, ns: &str, name: &str, version: &str, body: &str) {
+    let pkg_dir = search_root.join(ns).join(name).join(version);
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(pkg_dir.join("typst.toml"), body).unwrap();
+}
+
+#[test]
+fn min_version_below_current_is_accepted() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo]\nmin_version = \"0.1.0\"\n",
+    );
+    assert!(
+        check_package_min_versions_in_dirs(
+            &["@testns/testpkg:0.1.0".to_string()],
+            &[search_root.path().to_path_buf()],
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn min_version_above_current_is_rejected() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo]\nmin_version = \"99.0.0\"\n",
+    );
+    let err = check_package_min_versions_in_dirs(
+        &["@testns/testpkg:0.1.0".to_string()],
+        &[search_root.path().to_path_buf()],
+    )
+    .unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("@testns/testpkg:0.1.0"));
+    assert!(message.contains("99.0.0"));
+    // Compared against rheo-core's own build-time version, not this test
+    // binary's — rheo-tests and rheo are versioned independently.
+    assert!(message.contains(manifest_version::CURRENT));
+}
+
+#[test]
+fn no_min_version_is_accepted() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo.html]\ncss_stylesheet = \"style.css\"\n",
+    );
+    assert!(
+        check_package_min_versions_in_dirs(
+            &["@testns/testpkg:0.1.0".to_string()],
+            &[search_root.path().to_path_buf()],
+        )
+        .is_ok()
+    );
+}
+
+/// One build reports every stale package, not just the first, one line each.
+#[test]
+fn min_version_names_every_offender_in_one_build() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "ns",
+        "a",
+        "1.0",
+        "[tool.rheo]\nmin_version = \"99.0.0\"\n",
+    );
+    stage_manifest(
+        search_root.path(),
+        "ns",
+        "b",
+        "1.0",
+        "[tool.rheo]\nmin_version = \"98.0.0\"\n",
+    );
+    stage_manifest(
+        search_root.path(),
+        "ns",
+        "c",
+        "1.0",
+        "[tool.rheo]\nmin_version = \"0.1.0\"\n",
+    );
+
+    let err = check_package_min_versions_in_dirs(
+        &[
+            "@ns/a:1.0".to_string(),
+            "@ns/b:1.0".to_string(),
+            "@ns/c:1.0".to_string(),
+        ],
+        &[search_root.path().to_path_buf()],
+    )
+    .unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("@ns/a:1.0") && message.contains("99.0.0"));
+    assert!(message.contains("@ns/b:1.0") && message.contains("98.0.0"));
+    assert!(
+        !message.contains("@ns/c:1.0"),
+        "satisfied package named as an offender"
+    );
+}
+
+/// The documented trap: a bare `min_version` key after `[tool.rheo.<format>]`,
+/// with no `[tool.rheo]` header of its own, is scoped by TOML to the last
+/// header seen — it lands inside that subtable, not `[tool.rheo]`, so the
+/// floor is silently never read rather than enforced.
+#[test]
+fn min_version_misplaced_under_format_subtable_is_not_read() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo.html]\ncss_stylesheet = \"style.css\"\nmin_version = \"99.0.0\"\n",
+    );
+    assert!(
+        check_package_min_versions_in_dirs(
+            &["@testns/testpkg:0.1.0".to_string()],
+            &[search_root.path().to_path_buf()],
+        )
+        .is_ok(),
+        "misplaced min_version should be silently ignored, not enforced"
+    );
 }
