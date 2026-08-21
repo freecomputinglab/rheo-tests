@@ -1,0 +1,3 @@
+version = "0.4.0"
+formats = ["html"]
+font_dirs = ["other_fonts"]

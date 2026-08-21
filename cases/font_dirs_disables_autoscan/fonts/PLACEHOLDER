@@ -1,0 +1,2 @@
+Autoscan candidate dir. Must exist (is_dir() check) but content is irrelevant --
+rheo-tests-5ag asserts this dir is NOT scanned once rheo.toml declares font_dirs.

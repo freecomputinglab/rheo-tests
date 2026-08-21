@@ -97,6 +97,7 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/retired_key_merge_warns")]
 #[test_case("cases/version_mismatch_migrate_warns")]
 #[test_case("cases/retired_feed_keys_warn")]
+#[test_case("cases/font_dirs_disables_autoscan")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
@@ -3302,4 +3303,146 @@ fn test_epub_author_absent_build_succeeds() {
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).ok();
     }
+}
+
+/// Covers rheo-tests-5ag's `--font-dir` half. The flag is `ArgAction::Append`
+/// (crates/cli/src/lib.rs) and, per `resolve_font_dirs`
+/// (crates/core/src/build.rs), is appended unconditionally on top of whatever
+/// the autoscan/config branch already produced. This project has no
+/// `font_dirs` in rheo.toml, so `fonts/` autoscans; two repeated --font-dir
+/// flags on top should bring the total to 3. No real font file is needed --
+/// `resolve_font_dirs` only checks directory existence, and the merged list
+/// is observable directly from the CLI's own `INFO loading fonts from N
+/// additional directories` line (crates/core/src/world.rs), so this asserts
+/// resolution/discovery rather than shipping a binary font into the repo
+/// (see rheo-tests-5ag and cases/font_dirs_disables_autoscan for the sibling
+/// case pinning the config-side autoscan-disable behaviour).
+#[test]
+fn test_font_dir_cli_flag_appends_and_repeats() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path().join("project");
+    let fonts_dir = project_path.join("fonts"); // autoscan candidate
+    let extra_a = dir.path().join("extra_fonts_a");
+    let extra_b = dir.path().join("extra_fonts_b");
+    std::fs::create_dir_all(&fonts_dir).expect("Failed to create fonts dir");
+    std::fs::create_dir_all(&extra_a).expect("Failed to create extra_a dir");
+    std::fs::create_dir_all(&extra_b).expect("Failed to create extra_b dir");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+    std::fs::write(
+        project_path.join("main.typ"),
+        "= Hello\n\n--font-dir probe.\n",
+    )
+    .expect("Failed to write main.typ");
+
+    let build_dir = dir.path().join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+            "--html",
+            "--font-dir",
+            extra_a.to_str().unwrap(),
+            "--font-dir",
+            extra_b.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        output.status.success(),
+        "Compilation with --font-dir failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("loading fonts from 3 additional directories"),
+        "expected autoscanned fonts/ + 2 repeated --font-dir flags = 3 dirs, got:\n{combined}"
+    );
+    assert!(
+        combined.contains(fonts_dir.to_str().unwrap()),
+        "autoscanned fonts/ dir should still be listed:\n{combined}"
+    );
+    assert!(
+        combined.contains(extra_a.to_str().unwrap())
+            && combined.contains(extra_b.to_str().unwrap()),
+        "both repeated --font-dir values should be listed:\n{combined}"
+    );
+}
+
+/// rheo-tests-4tk decision: `--open` is NOT an untested gap that needs a new
+/// end-to-end test, for two reasons pinned here (not just in the bead):
+///
+/// 1. The flag only exists on `watch` -- `build_compile_command` in
+///    ../rheo/crates/cli/src/lib.rs registers no "open" Arg at all, only
+///    `build_watch_command` does. `compile --open` is a clap parse error
+///    (asserted below), so the doc audit's premise of testing it via
+///    `compile` doesn't even apply.
+/// 2. On `watch`, `--open` is already exercised end-to-end by every
+///    `DevServer`-based test: `src/helpers/devserver.rs`'s `DevServer::start`
+///    unconditionally passes `.arg("--open")` to every `rheo watch` it
+///    spawns (see tests/watch.rs's `dev_server_serves_and_rebuilds_on_change`),
+///    and starting the HTML dev server at all only happens through the
+///    `--open` code path (`run_watch`'s `if open { ... plugin.open() ... }`).
+///    A failed best-effort browser-open (no GUI in CI) is caught and
+///    warned, never propagated (../rheo/crates/html/src/lib.rs), so that
+///    path is already headless-safe. A dedicated `--open` test would just
+///    re-spawn another slow watch subprocess to duplicate coverage that
+///    already exists.
+///
+/// So this is a deliberate, documented non-duplication -- the only actual
+/// gap was the compile/watch split itself, which this test pins.
+#[test]
+fn test_open_flag_only_exists_on_watch_not_compile() {
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path().join("project");
+    std::fs::create_dir_all(&project_path).expect("Failed to create project dir");
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+    std::fs::write(project_path.join("main.typ"), "= Hello\n").expect("Failed to write main.typ");
+
+    let build_dir = dir.path().join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+            "--html",
+            "--open",
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "expected `compile --open` to be rejected by clap (the flag is watch-only), but it succeeded"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--open"),
+        "expected clap's error to name the unrecognized --open flag, got:\n{stderr}"
+    );
 }

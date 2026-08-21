@@ -1,0 +1,2 @@
+The dir actually declared via rheo.toml's font_dirs -- content irrelevant, only
+presence in the resolved font-dir list is asserted (see main.typ warn-pattern).
