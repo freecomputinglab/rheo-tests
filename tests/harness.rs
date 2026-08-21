@@ -3174,6 +3174,66 @@ fn test_metadata_of_combined_pdf_no_crash() {
     }
 }
 
+/// `cases/metadata_two_pass_bounded_title/bounded.typ` sets its title inside
+/// a bounded `#{ }` code block — correct for its own compiled `<title>`
+/// (unscoped `DocumentInfo`), but invisible to the ordinary single-pass
+/// metadata beacon's `#context` read (`docs/limitations.md`,
+/// `cases/metadata_show_and_code_block/`). `--metadata-two-pass` opts into a
+/// gated second compile pass that resolves it from Rust's already-correct
+/// `DocumentInfo` instead. Without the flag, `index.typ`'s `@bounded` anchor
+/// and `metadata-of("bounded").title` must still show the path-derived
+/// fallback ("Bounded"); with it, both must show the real "Two Pass Title".
+#[test]
+fn test_metadata_two_pass_resolves_bounded_code_block_title() {
+    let test_store = PathBuf::from("store/metadata_two_pass_bounded_title");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(
+        &PathBuf::from("cases/metadata_two_pass_bounded_title"),
+        &test_store,
+    )
+    .expect("Failed to copy fixture");
+
+    let build_dir = test_store.join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            test_store.to_str().unwrap(),
+            "--html",
+            "--metadata-two-pass",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        output.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let index_html = std::fs::read_to_string(build_dir.join("html/index.html"))
+        .expect("read build/html/index.html");
+    assert!(
+        index_html.contains("Two Pass Title"),
+        "expected index.html to show bounded.typ's real title (\"Two Pass \
+         Title\"), resolved via --metadata-two-pass through both the \
+         @bounded handle anchor and metadata-of, got:\n{index_html}"
+    );
+    assert!(
+        !index_html.contains(">Bounded<"),
+        "expected the @bounded handle anchor to show the real title, not \
+         the path-derived fallback (\"Bounded\"), got:\n{index_html}"
+    );
+
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).ok();
+    }
+}
+
 /// Today's EPUB author extraction reads a `rheo-author` Typst variable, or
 /// falls back to scraping an HTML `<meta name="author">` tag — it does NOT
 /// yet read Typst's own `#set document(author: ...)`. This fixture sets only
