@@ -173,8 +173,25 @@ fn run_test_case(name: &str) {
         test_store.clone()
     };
 
-    // Load project from isolated copy
-    let project = ProjectConfig::from_path(&project_path, None).expect("Failed to load project");
+    let expects_error = test_case
+        .metadata()
+        .and_then(|m| m.expect.as_ref())
+        .map(|e| e == "error")
+        .unwrap_or(false);
+
+    // A rheo.toml rejected at config validation never reaches the compile below,
+    // so for an error case the load failure itself is the expected error.
+    let project = match ProjectConfig::from_path(&project_path, None) {
+        Ok(project) => project,
+        Err(e) if expects_error => {
+            if let Some(metadata) = test_case.metadata() {
+                assert_patterns_present(&metadata.error_patterns, &e.to_string(), "error");
+            }
+            std::fs::remove_dir_all(&test_store).ok();
+            return;
+        }
+        Err(e) => panic!("Failed to load project for {test_name}: {e}"),
+    };
     let config = RheoConfig::load(&project.root);
 
     // Get declared formats from test case (respects markers for single-file tests)
@@ -232,13 +249,6 @@ fn run_test_case(name: &str) {
         .output()
         .expect("Failed to run rheo compile");
 
-    // Check if test expects compilation error
-    let expects_error = test_case
-        .metadata()
-        .and_then(|m| m.expect.as_ref())
-        .map(|e| e == "error")
-        .unwrap_or(false);
-
     if expects_error {
         // Test expects compilation to fail
         assert!(
@@ -270,15 +280,10 @@ fn run_test_case(name: &str) {
     }
 
     // A successful build may still be required to warn (e.g. retired-key or
-    // version-mismatch notices). The tracing subscriber writes those to
-    // stdout, not stderr, so check both streams combined.
+    // version-mismatch notices).
     if let Some(metadata) = test_case.metadata() {
-        let combined = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_patterns_present(&metadata.warn_patterns, &combined, "warning");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_patterns_present(&metadata.warn_patterns, &stderr, "warning");
     }
 
     // let run_epub = env::var("RUN_EPUB_TESTS").is_ok() || env::var("RUN_EPUB_TESTS").is_err();
@@ -2633,8 +2638,7 @@ fn test_nested_marrow_file_warns() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // rheo's tracing subscriber writes to stdout, not stderr.
-    let logs = String::from_utf8_lossy(&output.stdout);
+    let logs = String::from_utf8_lossy(&output.stderr);
     assert!(
         logs.contains("marrow is only read from the top level"),
         "expected a warning about the nested marrow file:\n{logs}"
@@ -3005,17 +3009,14 @@ fn test_head_control_unrecognized_asset_excluded_and_warns() {
          an unrecognized control asset name"
     );
 
-    // The bead's expectation is that rheo warns about an unrecognized `.rheo/*`
-    // asset. rheo's tracing subscriber writes to stdout, not stderr (see the
-    // nested-marrow-file warning check earlier in this file), and a `WARN`
-    // line prints the level as that short tag, not the spelled-out word
-    // "warning" (unlike the codespan-reporting diagnostics `test_warning_formatting`
-    // checks) — so this asserts on the actual message content instead.
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // A tracing `WARN` line prints that short tag rather than the spelled-out
+    // "warning" of the codespan-reporting diagnostics `test_warning_formatting`
+    // checks, so this asserts on the message content instead.
+    let logs = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains("WARN") && stdout.contains("unrecognized control asset"),
+        logs.contains("WARN") && logs.contains("unrecognized control asset"),
         "Expected a warning about the unrecognized .rheo/future-thing.json \
-         control asset, got stdout:\n{stdout}"
+         control asset, got:\n{logs}"
     );
 }
 
