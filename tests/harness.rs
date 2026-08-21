@@ -85,6 +85,7 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/html_css_injection")]
 #[test_case("cases/head_hoist")]
 #[test_case("cases/head_control")]
+#[test_case("cases/template_element")]
 #[test_case("cases/footnote_reset_per_page")]
 #[test_case("cases/footnote_no_reset")]
 #[test_case("cases/bundle_multi_bibliography")]
