@@ -1,5 +1,5 @@
 use ntest::test_case;
-use rheo_core::{RheoConfig, config::project::ProjectConfig};
+use rheo_core::{RheoConfig, config::manifest_version, config::project::ProjectConfig};
 use rheo_tests::helpers::{
     cli::rheo_cli_command,
     comparison::{verify_epub_output, verify_html_output, verify_pdf_output},
@@ -155,7 +155,7 @@ fn run_test_case(name: &str) {
                         .and_then(|s| s.strip_suffix('"')))
                     .unwrap_or("")
             ),
-            &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+            &format!("version = \"{}\"", manifest_version::CURRENT),
         );
         std::fs::write(&store_toml, patched).expect("Failed to patch rheo.toml version");
     }
@@ -605,7 +605,7 @@ fn test_asset_patterns() {
              \n\
              [html.assets]\n\
              copy = [\"assets/logo.png\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -680,7 +680,7 @@ fn test_asset_patterns_multiple_blocks() {
              \n\
              [[html.assets]]\n\
              copy = [\"js/**/*\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -743,7 +743,7 @@ fn test_asset_patterns_glob_recursive() {
              \n\
              [html.assets]\n\
              copy = [\"images/**/*\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -819,7 +819,7 @@ fn test_asset_patterns_dest_preserves_structure() {
              \n\
              [[html.assets]]\n\
              copy = [\"main.typ\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -887,7 +887,7 @@ fn test_asset_dest_subdirectory() {
              copy = [\"image.png\"]\n\
              js_scripts     = \"dist/index.js\"\n\
              css_stylesheet = \"index.css\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -1038,7 +1038,7 @@ fn test_asset_path_override() {
              \n\
              [html.assets]\n\
              css_stylesheet = \"custom.css\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -1108,7 +1108,7 @@ fn test_asset_path_override_subdirectory() {
              \n\
              [html.assets]\n\
              css_stylesheet = \"styles/custom.css\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -1170,7 +1170,7 @@ fn test_asset_multiple_blocks_inject_all() {
              [[html.assets]]\n\
              css_stylesheet = \"two.css\"\n\
              js_scripts     = \"two.js\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -1234,7 +1234,7 @@ fn test_rheo_context_target_and_no_legacy_key() {
         format!(
             "version = \"{}\"\n\
              formats = [\"html\", \"epub\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -1319,7 +1319,7 @@ fn test_merged_imports_missing_file() {
              title = \"Missing Import Test\"\n\
              vertebrae = [\"content/chapter.typ\"]\n\
              merge = true\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -1384,7 +1384,7 @@ fn test_escape_label_collision_error() {
              [html.spine]\n\
              title = \"Escape Collision Test\"\n\
              vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -1450,7 +1450,7 @@ fn test_spine_section_no_match_error() {
              [[spine.section]]\n\
              name = \"ghost\"\n\
              include = [\"nope.typ\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -1837,7 +1837,7 @@ fn test_external_config_flag() {
              \n\
              [html.assets]\n\
              css_stylesheet = \"custom.css\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write external.toml");
@@ -1940,7 +1940,7 @@ fn test_marrow_atom_feed() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2013,7 +2013,7 @@ fn test_marrow() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2138,7 +2138,7 @@ fn test_marrow_metadata() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2208,7 +2208,7 @@ fn test_marrow_page_init() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2297,7 +2297,7 @@ fn test_marrow_excluded_from_epub_reading_order() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2401,7 +2401,7 @@ fn test_marrow_asset_embedded_in_epub() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2526,7 +2526,7 @@ fn test_emit_bundle_source_flag() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2616,7 +2616,7 @@ fn test_nested_marrow_file_warns() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\ncontent_dir = \"content\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("write rheo.toml");
@@ -2758,7 +2758,7 @@ fn test_transclude_content() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2818,7 +2818,7 @@ fn test_transclude_content_missing_page_error() {
         format!(
             "version = \"{}\"\n\
              formats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -2900,7 +2900,7 @@ fn test_head_control_excludes_reserved_prefix() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -2969,7 +2969,7 @@ fn test_head_control_unrecognized_asset_excluded_and_warns() {
         format!(
             "version = \"{}\"\n\
              formats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -3271,7 +3271,7 @@ fn test_epub_author_from_typst_document_author() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -3346,7 +3346,7 @@ fn test_epub_author_absent_build_succeeds() {
                     .and_then(|s| s.strip_suffix('"')))
                 .unwrap_or("")
         ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
+        &format!("version = \"{}\"", manifest_version::CURRENT),
     );
     std::fs::write(&store_toml, patched).expect("patch version");
 
@@ -3400,7 +3400,7 @@ fn test_font_dir_cli_flag_appends_and_repeats() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION")
+            manifest_version::CURRENT
         ),
     )
     .expect("Failed to write rheo.toml");
@@ -3484,7 +3484,7 @@ fn test_open_flag_only_exists_on_watch_not_compile() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION")
+            manifest_version::CURRENT
         ),
     )
     .expect("Failed to write rheo.toml");

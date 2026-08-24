@@ -122,7 +122,7 @@ Test document.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -237,7 +237,7 @@ Opt-out test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n\n[html]\nauto_detect_packages = false\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -297,7 +297,7 @@ Non-preview auto-detect test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -373,7 +373,7 @@ Copy pattern test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -472,7 +472,7 @@ fn e2e_package_declared_marrow_mints_a_page() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -557,7 +557,7 @@ fn package_marrow_respects_auto_detect_opt_out() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n\n[html]\nauto_detect_packages = false\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -688,7 +688,7 @@ fn e2e_project_and_package_marrow_both_inline() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\nmarrow = \"bundle-root.typ\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -790,7 +790,7 @@ Two packages imported.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -866,7 +866,7 @@ Scope test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -913,7 +913,7 @@ fn e2e_empty_package_marrow_is_a_no_op() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();

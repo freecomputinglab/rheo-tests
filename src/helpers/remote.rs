@@ -1,3 +1,4 @@
+use rheo_core::config::manifest_version;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -46,7 +47,7 @@ pub fn clone_repo(url: &str, name: &str) -> PathBuf {
 }
 
 /// Patch the `version` field in `<project>/rheo.toml` to match
-/// `env!("CARGO_PKG_VERSION")`. Overrides whatever version the external
+/// `manifest_version::CURRENT`. Overrides whatever version the external
 /// project declares, so version-mismatch errors don't mask real failures.
 ///
 /// Does nothing if no rheo.toml is present.
@@ -59,7 +60,7 @@ pub fn patch_rheo_version(project_path: &Path) {
     let content = fs::read_to_string(&toml_path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", toml_path.display(), e));
 
-    let version = env!("CARGO_PKG_VERSION");
+    let version = manifest_version::CURRENT;
     let had_trailing_newline = content.ends_with('\n');
 
     let patched: String = content
