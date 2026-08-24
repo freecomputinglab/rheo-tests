@@ -5,13 +5,13 @@ use rheo_tests::helpers::{
     comparison::{
         compare_or_update_text_asset, verify_epub_output, verify_html_output, verify_pdf_output,
     },
-    compiled::CompiledFixture,
+    compiled::{CompiledFixture, TestStore, patch_manifest_version},
     fixtures::TestCase,
     reference::{update_epub_references, update_html_references, update_pdf_references},
     test_store::copy_project_to_test_store,
 };
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Asserts every pattern is a substring of `output`; `label` names the kind of
 /// pattern (e.g. `"error"`, `"warning"`) for the failure message.
@@ -125,74 +125,37 @@ fn run_test_case(name: &str) {
     let update_mode = env::var("UPDATE_REFERENCES").is_ok();
     let test_name = test_case.name();
     let original_project_path = test_case.project_path();
+    let is_single = test_case.is_single_file();
 
-    // Create isolated test store
-    let test_store = PathBuf::from("store").join(test_name);
+    let store = TestStore::fresh(test_name);
 
-    // Clean previous test artifacts
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
-    }
-    std::fs::create_dir_all(&test_store).expect("Failed to create test store");
-
-    // Copy project to test store for isolation
-    if test_case.is_single_file() {
-        // For single-file tests, copy just the file and its parent directory structure
-        let parent = original_project_path
+    // A single-file case is copied together with its parent directory, so a
+    // sibling it imports comes along.
+    let copy_from = if is_single {
+        original_project_path
             .parent()
-            .expect("Single file should have parent");
-        copy_project_to_test_store(parent, &test_store)
-            .expect("Failed to copy project to test store");
+            .expect("single-file case has a parent directory")
     } else {
-        // For directory tests, copy the whole project
-        copy_project_to_test_store(original_project_path, &test_store)
-            .expect("Failed to copy project to test store");
+        original_project_path
+    };
+    copy_project_to_test_store(copy_from, store.path()).expect("copy project to test store");
+
+    // `@rheo:keep-version` opts out, to exercise a deliberately stale version.
+    if !test_case.metadata().is_some_and(|m| m.keep_version) {
+        patch_manifest_version(&store.join("rheo.toml"));
     }
 
-    let keep_version = test_case
-        .metadata()
-        .map(|m| m.keep_version)
-        .unwrap_or(false);
-
-    // Patch rheo.toml version to match current crate version, unless the case
-    // opts out (`@rheo:keep-version`) to exercise a deliberately stale version.
-    let store_toml = test_store.join("rheo.toml");
-    if store_toml.exists() && !keep_version {
-        let content = std::fs::read_to_string(&store_toml).expect("Failed to read rheo.toml");
-        let patched = content.replace(
-            &format!(
-                "version = \"{}\"",
-                content
-                    .lines()
-                    .find_map(|l| l
-                        .strip_prefix("version = \"")
-                        .and_then(|s| s.strip_suffix('"')))
-                    .unwrap_or("")
-            ),
-            &format!("version = \"{}\"", manifest_version::CURRENT),
-        );
-        std::fs::write(&store_toml, patched).expect("Failed to patch rheo.toml version");
-    }
-
-    // Use test store as project path
-    let project_path = if test_case.is_single_file() {
-        let rel_path = original_project_path
-            .strip_prefix(
-                original_project_path
-                    .parent()
-                    .expect("Single file should have parent"),
-            )
-            .expect("Failed to get relative path");
-        test_store.join(rel_path)
+    let project_path = if is_single {
+        store.join(
+            original_project_path
+                .file_name()
+                .expect("single-file case has a file name"),
+        )
     } else {
-        test_store.clone()
+        store.path().to_path_buf()
     };
 
-    let expects_error = test_case
-        .metadata()
-        .and_then(|m| m.expect.as_ref())
-        .map(|e| e == "error")
-        .unwrap_or(false);
+    let expects_error = test_case.metadata().and_then(|m| m.expect.as_deref()) == Some("error");
 
     // A rheo.toml rejected at config validation never reaches the compile below,
     // so for an error case the load failure itself is the expected error.
@@ -202,149 +165,112 @@ fn run_test_case(name: &str) {
             if let Some(metadata) = test_case.metadata() {
                 assert_patterns_present(&metadata.error_patterns, &e.to_string(), "error");
             }
-            std::fs::remove_dir_all(&test_store).ok();
             return;
         }
         Err(e) => panic!("Failed to load project for {test_name}: {e}"),
     };
     let config = RheoConfig::load(&project.root);
-
-    // Get declared formats from test case (respects markers for single-file tests)
     let declared_formats = test_case.formats();
 
-    // Check environment variables for format filtering
     let env_html = env::var("RUN_HTML_TESTS").is_ok();
     let env_pdf = env::var("RUN_PDF_TESTS").is_ok();
     let env_epub = env::var("RUN_EPUB_TESTS").is_ok();
-
-    // If no env vars set, run all declared formats
     let run_all = !env_html && !env_pdf && !env_epub;
 
-    // Compute which formats to actually run
-    // For single-file tests: use declared formats (config check optional, markers are authoritative)
-    // For directory tests: require config support (preserve existing behavior)
-    let run_html = declared_formats.iter().any(|f| f == "html")
-        && (run_all || env_html)
-        && (test_case.is_single_file() || config.as_ref().is_ok_and(|cfg| cfg.has_format("html")));
-    let run_pdf = declared_formats.iter().any(|f| f == "pdf")
-        && (run_all || env_pdf)
-        && (test_case.is_single_file() || config.as_ref().is_ok_and(|cfg| cfg.has_format("pdf")));
-    let run_epub = declared_formats.iter().any(|f| f == "epub")
-        && (run_all || env_epub)
-        && (test_case.is_single_file() || config.as_ref().is_ok_and(|cfg| cfg.has_format("epub")));
+    // A single-file case trusts its own markers; a directory case must also be
+    // configured for the format.
+    let enabled = |format: &str, env_selected: bool| {
+        declared_formats.iter().any(|f| f == format)
+            && (run_all || env_selected)
+            && (is_single || config.as_ref().is_ok_and(|cfg| cfg.has_format(format)))
+    };
+    let (run_html, run_pdf, run_epub) = (
+        enabled("html", env_html),
+        enabled("pdf", env_pdf),
+        enabled("epub", env_epub),
+    );
 
-    // Get build directory in test store
-    let build_dir = test_store.join("build");
-
-    // Build compile command with format flags
-    let mut compile_args = vec!["compile", project_path.to_str().unwrap()];
-
-    // Use isolated build directory
-    compile_args.push("--build-dir");
-    compile_args.push(build_dir.to_str().unwrap());
-
-    // For single-file tests, add explicit format flags based on declared formats
-    // For directory tests, let rheo use config/defaults (no flags = backward compatible)
-    if test_case.is_single_file() {
-        if run_html {
-            compile_args.push("--html");
-        }
-        if run_pdf {
-            compile_args.push("--pdf");
-        }
-        if run_epub {
-            compile_args.push("--epub");
+    let build_dir = store.join("build");
+    let mut compile_args = vec![
+        "compile",
+        project_path.to_str().expect("utf-8 project path"),
+        "--build-dir",
+        build_dir.to_str().expect("utf-8 build path"),
+    ];
+    // A directory case passes no format flags at all, leaving rheo's own
+    // config/defaults to decide — which is what it is there to exercise.
+    if is_single {
+        for (flag, run) in [
+            ("--html", run_html),
+            ("--pdf", run_pdf),
+            ("--epub", run_epub),
+        ] {
+            if run {
+                compile_args.push(flag);
+            }
         }
     }
 
-    // Compile the project using rheo CLI logic
     let output = rheo_cli_command()
         .args(&compile_args)
         .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
         .output()
         .expect("Failed to run rheo compile");
+    let stderr = String::from_utf8_lossy(&output.stderr);
 
     if expects_error {
-        // Test expects compilation to fail
         assert!(
             !output.status.success(),
-            "Expected compilation to fail for {}, but it succeeded",
-            test_name
+            "Expected compilation to fail for {test_name}, but it succeeded"
         );
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
         if let Some(metadata) = test_case.metadata() {
             assert_patterns_present(&metadata.error_patterns, &stderr, "error");
-        }
-
-        // For error cases, skip reference comparison and return early
-        // Clean test store before returning
-        if test_store.exists() {
-            std::fs::remove_dir_all(&test_store).ok();
         }
         return;
     }
 
-    // For success cases, continue with existing logic
-    if !output.status.success() {
-        panic!(
-            "Compilation failed for {}: {}",
-            test_name,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    assert!(
+        output.status.success(),
+        "Compilation failed for {test_name}: {stderr}"
+    );
 
     // A successful build may still be required to warn (e.g. retired-key or
     // version-mismatch notices).
     if let Some(metadata) = test_case.metadata() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         assert_patterns_present(&metadata.warn_patterns, &stderr, "warning");
     }
 
-    // let run_epub = env::var("RUN_EPUB_TESTS").is_ok() || env::var("RUN_EPUB_TESTS").is_err();
-
-    // Test HTML output
-    if run_html {
-        let html_output = build_dir.join("html");
-        if html_output.exists() {
-            if update_mode {
-                update_html_references(test_name, &html_output, &project_path)
-                    .expect("Failed to update HTML references");
-            } else {
-                verify_html_output(test_name, &html_output, test_case.is_single_file());
-            }
+    let check_html = |dir: &Path| {
+        if update_mode {
+            update_html_references(test_name, dir, &project_path).expect("update HTML references");
+        } else {
+            verify_html_output(test_name, dir, is_single);
         }
-    }
-
-    // Test PDF output
-    if run_pdf {
-        let pdf_output = build_dir.join("pdf");
-        if pdf_output.exists() {
-            if update_mode {
-                update_pdf_references(test_name, &pdf_output)
-                    .expect("Failed to update PDF references");
-            } else {
-                verify_pdf_output(test_name, &pdf_output);
-            }
+    };
+    let check_pdf = |dir: &Path| {
+        if update_mode {
+            update_pdf_references(test_name, dir).expect("update PDF references");
+        } else {
+            verify_pdf_output(test_name, dir);
         }
-    }
-
-    // Test EPUB output
-    if run_epub {
-        let epub_output = build_dir.join("epub");
-        if epub_output.exists() {
-            if update_mode {
-                update_epub_references(test_name, &epub_output)
-                    .expect("Failed to update EPUB references");
-            } else {
-                verify_epub_output(test_name, &epub_output);
-            }
+    };
+    let check_epub = |dir: &Path| {
+        if update_mode {
+            update_epub_references(test_name, dir).expect("update EPUB references");
+        } else {
+            verify_epub_output(test_name, dir);
         }
-    }
-
-    // Clean test store after test
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
+    };
+    let checks: [(&str, bool, &dyn Fn(&Path)); 3] = [
+        ("html", run_html, &check_html),
+        ("pdf", run_pdf, &check_pdf),
+        ("epub", run_epub, &check_epub),
+    ];
+    for (format, run, check) in checks {
+        let dir = build_dir.join(format);
+        if run && dir.exists() {
+            check(&dir);
+        }
     }
 }
 

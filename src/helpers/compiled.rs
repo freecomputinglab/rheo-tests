@@ -12,12 +12,42 @@ use rheo_core::config::manifest_version;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-/// A fixture copied into an isolated store and compiled.
-///
-/// The store is removed on drop, so a failing assertion cannot leak it into the
-/// next run.
+/// An isolated `store/<name>` directory, removed on drop — so a panicking
+/// assertion cannot leak it into the next run, which a cleanup call at the end
+/// of a test body cannot promise.
+pub struct TestStore {
+    path: PathBuf,
+}
+
+impl TestStore {
+    /// An empty `store/<name>`, clearing anything a previous run left.
+    pub fn fresh(name: &str) -> Self {
+        let path = PathBuf::from("store").join(name);
+        if path.exists() {
+            std::fs::remove_dir_all(&path).expect("clean test store");
+        }
+        std::fs::create_dir_all(&path).expect("create test store");
+        Self { path }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn join(&self, rel: impl AsRef<Path>) -> PathBuf {
+        self.path.join(rel)
+    }
+}
+
+impl Drop for TestStore {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.path).ok();
+    }
+}
+
+/// A fixture copied into a [`TestStore`] and compiled.
 pub struct CompiledFixture {
-    store: PathBuf,
+    store: TestStore,
     build_dir: PathBuf,
     output: Output,
 }
@@ -31,16 +61,12 @@ impl CompiledFixture {
     /// [`Self::expect_success`] for that, or read [`Self::output`] to assert a
     /// deliberate failure.
     pub fn compile(fixture: &str, store_name: &str, formats: &[&str]) -> Self {
-        let store = PathBuf::from("store").join(store_name);
-        if store.exists() {
-            std::fs::remove_dir_all(&store).expect("clean store");
-        }
-        std::fs::create_dir_all(&store).expect("create store");
-        copy_project_to_test_store(Path::new(fixture), &store).expect("copy fixture");
+        let store = TestStore::fresh(store_name);
+        copy_project_to_test_store(Path::new(fixture), store.path()).expect("copy fixture");
         patch_manifest_version(&store.join("rheo.toml"));
 
         let build_dir = store.join("build");
-        let output = run_compile(&store, &build_dir, formats);
+        let output = run_compile(store.path(), &build_dir, formats);
         Self {
             store,
             build_dir,
@@ -61,7 +87,7 @@ impl CompiledFixture {
     /// Compile the same store again for a different format set, e.g. to check
     /// that a marrow contribution is skipped under the combined PDF target.
     pub fn recompile(&self, formats: &[&str]) -> Output {
-        run_compile(&self.store, &self.build_dir, formats)
+        run_compile(self.store.path(), &self.build_dir, formats)
     }
 
     /// The compile's captured output, for a test asserting on a deliberate
@@ -96,12 +122,6 @@ impl CompiledFixture {
     }
 }
 
-impl Drop for CompiledFixture {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.store).ok();
-    }
-}
-
 fn run_compile(project: &Path, build_dir: &Path, formats: &[&str]) -> Output {
     rheo_cli_command()
         .args(["compile", project.to_str().expect("utf-8 store path")])
@@ -115,8 +135,9 @@ fn run_compile(project: &Path, build_dir: &Path, formats: &[&str]) -> Output {
 /// Rewrite `version = "..."` in `toml_path` to the rheo this suite tests, so a
 /// fixture pinning an older version doesn't trip the version-mismatch warning.
 /// A fixture deliberately exercising a stale version opts out by not going
-/// through here (see `@rheo:keep-version` in `tests/harness.rs`).
-fn patch_manifest_version(toml_path: &Path) {
+/// through here (see `@rheo:keep-version` in `tests/harness.rs`). A missing
+/// `rheo.toml` is not an error — a single-file case has none.
+pub fn patch_manifest_version(toml_path: &Path) {
     let Ok(content) = std::fs::read_to_string(toml_path) else {
         return;
     };
