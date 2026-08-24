@@ -247,6 +247,20 @@ pub fn compare_text_asset(reference: &Path, actual: &Path, label: &str) -> Resul
     }
 }
 
+/// [`compare_text_asset`], or refresh `reference` from `actual` when
+/// `UPDATE_REFERENCES` is set — the shape a bespoke single-asset test needs,
+/// mirroring what `reference::update_*_references` does for whole trees.
+pub fn compare_or_update_text_asset(reference: &Path, actual: &Path, label: &str) {
+    if std::env::var("UPDATE_REFERENCES").is_ok() {
+        fs::create_dir_all(reference.parent().expect("reference path has a parent"))
+            .expect("create reference directory");
+        fs::copy(actual, reference).expect("write reference");
+        println!("Updated {label} reference at {}", reference.display());
+    } else {
+        compare_text_asset(reference, actual, label).expect("asset content mismatch");
+    }
+}
+
 fn compute_html_diff(reference: &str, actual: &str) -> String {
     let diff = TextDiff::from_lines(reference, actual);
 
