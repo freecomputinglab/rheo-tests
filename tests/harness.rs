@@ -41,6 +41,7 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/bundle_ref_cross_directory")]
 #[test_case("cases/epub_inferred_spine")]
 #[test_case("cases/link_path_edge_cases")]
+#[test_case("cases/link_rule_static")]
 #[test_case("cases/link_transformation")]
 #[test_case("cases/links_with_fragments")]
 #[test_case("cases/dead_link_error.typ")]
