@@ -1,8 +1,5 @@
 use rheo_core::config::manifest_version;
-use rheo_core::plugins::{
-    check_package_min_versions_in_dirs, detect_manifest_package_assets_in_dirs,
-    detect_package_marrow_in_dirs,
-};
+use rheo_core::plugins::PackageIndex;
 use rheo_tests::helpers::cli::rheo_cli_command;
 
 #[test]
@@ -29,11 +26,8 @@ js_scripts = "main.js"
     std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
 
     let imports = vec!["@testns/testpkg:0.1.0".to_string()];
-    let blocks = detect_manifest_package_assets_in_dirs(
-        &imports,
-        "html",
-        &[search_root.path().to_path_buf()],
-    );
+    let blocks =
+        PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).manifest_assets("html");
 
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].assets.dest.as_deref(), Some("testns/testpkg"));
@@ -67,11 +61,8 @@ fn detect_manifest_skips_packages_without_tool_rheo() {
     .unwrap();
 
     let imports = vec!["@otherns/pkg:1.0".to_string()];
-    let blocks = detect_manifest_package_assets_in_dirs(
-        &imports,
-        "html",
-        &[search_root.path().to_path_buf()],
-    );
+    let blocks =
+        PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).manifest_assets("html");
     assert!(blocks.is_empty());
 }
 
@@ -615,7 +606,7 @@ fn detect_package_marrow_returns_the_file_verbatim() {
     let root = stage_package_with_marrow(Some(text));
 
     let imports = vec!["@mns/mpkg:0.1.0".to_string()];
-    let found = detect_package_marrow_in_dirs(&imports, &[root.path().to_path_buf()]);
+    let found = PackageIndex::new(&imports, &[root.path().to_path_buf()]).marrow();
 
     assert_eq!(found, vec![text.to_string()]);
 }
@@ -625,7 +616,7 @@ fn detect_package_marrow_skips_packages_without_one() {
     let root = stage_package_with_marrow(None);
 
     let imports = vec!["@mns/mpkg:0.1.0".to_string()];
-    let found = detect_package_marrow_in_dirs(&imports, &[root.path().to_path_buf()]);
+    let found = PackageIndex::new(&imports, &[root.path().to_path_buf()]).marrow();
 
     assert!(found.is_empty());
 }
@@ -648,7 +639,7 @@ fn detect_package_marrow_collects_every_package_in_import_order() {
     }
 
     let imports = vec!["@mns/bpkg:0.1.0".to_string(), "@mns/apkg:0.1.0".to_string()];
-    let found = detect_package_marrow_in_dirs(&imports, &[search_root.path().to_path_buf()]);
+    let found = PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).marrow();
 
     assert_eq!(
         found,
@@ -952,10 +943,11 @@ fn min_version_below_current_is_accepted() {
         "[tool.rheo]\nmin_version = \"0.1.0\"\n",
     );
     assert!(
-        check_package_min_versions_in_dirs(
+        PackageIndex::new(
             &["@testns/testpkg:0.1.0".to_string()],
-            &[search_root.path().to_path_buf()],
+            &[search_root.path().to_path_buf()]
         )
+        .check_min_versions()
         .is_ok()
     );
 }
@@ -970,10 +962,11 @@ fn min_version_above_current_is_rejected() {
         "0.1.0",
         "[tool.rheo]\nmin_version = \"99.0.0\"\n",
     );
-    let err = check_package_min_versions_in_dirs(
+    let err = PackageIndex::new(
         &["@testns/testpkg:0.1.0".to_string()],
         &[search_root.path().to_path_buf()],
     )
+    .check_min_versions()
     .unwrap_err();
     let message = err.to_string();
     assert!(message.contains("@testns/testpkg:0.1.0"));
@@ -994,10 +987,11 @@ fn no_min_version_is_accepted() {
         "[tool.rheo.html]\ncss_stylesheet = \"style.css\"\n",
     );
     assert!(
-        check_package_min_versions_in_dirs(
+        PackageIndex::new(
             &["@testns/testpkg:0.1.0".to_string()],
-            &[search_root.path().to_path_buf()],
+            &[search_root.path().to_path_buf()]
         )
+        .check_min_versions()
         .is_ok()
     );
 }
@@ -1028,7 +1022,7 @@ fn min_version_names_every_offender_in_one_build() {
         "[tool.rheo]\nmin_version = \"0.1.0\"\n",
     );
 
-    let err = check_package_min_versions_in_dirs(
+    let err = PackageIndex::new(
         &[
             "@ns/a:1.0".to_string(),
             "@ns/b:1.0".to_string(),
@@ -1036,6 +1030,7 @@ fn min_version_names_every_offender_in_one_build() {
         ],
         &[search_root.path().to_path_buf()],
     )
+    .check_min_versions()
     .unwrap_err();
     let message = err.to_string();
     assert!(message.contains("@ns/a:1.0") && message.contains("99.0.0"));
@@ -1061,10 +1056,11 @@ fn min_version_misplaced_under_format_subtable_is_not_read() {
         "[tool.rheo.html]\ncss_stylesheet = \"style.css\"\nmin_version = \"99.0.0\"\n",
     );
     assert!(
-        check_package_min_versions_in_dirs(
+        PackageIndex::new(
             &["@testns/testpkg:0.1.0".to_string()],
-            &[search_root.path().to_path_buf()],
+            &[search_root.path().to_path_buf()]
         )
+        .check_min_versions()
         .is_ok(),
         "misplaced min_version should be silently ignored, not enforced"
     );
