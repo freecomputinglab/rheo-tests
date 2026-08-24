@@ -113,6 +113,26 @@ The `rheo_cli_command()` helper builds a `Command` that invokes rheo. It respect
 - **`RUN_PDF_TESTS=1`** — Run only PDF tests.
 - **`RUN_EPUB_TESTS=1`** — Run only EPUB tests.
 
+## The package cache is a local blind spot
+
+A case importing an `@rheo/…` package (e.g. `cases/rheo_package_slides`) resolves it through
+Typst's package search directories — `$XDG_DATA_HOME/typst/packages` and
+`$XDG_CACHE_HOME/typst/packages`. A development machine typically symlinks the `rheo`
+namespace in one of those to a local `rheo-packages` checkout, so the package is already on
+disk. CI has neither the symlink nor a warm cache, and downloads instead.
+
+That difference hides a class of bug: anything that only goes wrong when rheo has to fetch
+the package mid-build — asset auto-detection probing disk before the download, for instance
+— passes locally and fails in CI. Reproduce CI's cold path by pointing both directories at
+empty tempdirs:
+
+```bash
+XDG_CACHE_HOME=$(mktemp -d) XDG_DATA_HOME=$(mktemp -d) \
+  RHEO_MANIFEST=../rheo/Cargo.toml cargo test --test harness rheo_package
+```
+
+It needs network, which is why it is not the default.
+
 ## Font Consistency
 
 To ensure tests produce identical output across different environments (local machines and CI), tests automatically use only Typst's embedded fonts. This prevents font-related rendering differences that cause page count and layout variations.

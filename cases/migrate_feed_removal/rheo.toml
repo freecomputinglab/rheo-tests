@@ -1,0 +1,10 @@
+version = "0.5.1"
+formats = ["html"]
+
+[html]
+feed_base_url = "https://example.com"
+feed_author = "Jane Doe"
+
+[[html.feed_include]]
+path = "extra/*.html"
+title = "Extra"

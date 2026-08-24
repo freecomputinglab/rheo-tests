@@ -1,11 +1,13 @@
-use rheo_core::plugins::{detect_manifest_package_assets_in_dirs, detect_package_marrow_in_dirs};
+use rheo_core::config::manifest_version;
+use rheo_core::plugins::PackageIndex;
 use rheo_tests::helpers::cli::rheo_cli_command;
+use rheo_tests::helpers::project::FakePackage;
 
 #[test]
 fn detect_manifest_package_assets_reads_tool_rheo_section() {
     let search_root = tempfile::tempdir().unwrap();
-    let pkg_dir = search_root.path().join("testns/testpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(search_root.path(), "@testns/testpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"
@@ -25,11 +27,8 @@ js_scripts = "main.js"
     std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
 
     let imports = vec!["@testns/testpkg:0.1.0".to_string()];
-    let blocks = detect_manifest_package_assets_in_dirs(
-        &imports,
-        "html",
-        &[search_root.path().to_path_buf()],
-    );
+    let blocks =
+        PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).manifest_assets("html");
 
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].assets.dest.as_deref(), Some("testns/testpkg"));
@@ -54,8 +53,8 @@ js_scripts = "main.js"
 #[test]
 fn detect_manifest_skips_packages_without_tool_rheo() {
     let search_root = tempfile::tempdir().unwrap();
-    let pkg_dir = search_root.path().join("otherns/pkg/1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(search_root.path(), "@otherns/pkg:1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         "[package]\nname = \"pkg\"\nversion = \"1.0\"\n",
@@ -63,11 +62,8 @@ fn detect_manifest_skips_packages_without_tool_rheo() {
     .unwrap();
 
     let imports = vec!["@otherns/pkg:1.0".to_string()];
-    let blocks = detect_manifest_package_assets_in_dirs(
-        &imports,
-        "html",
-        &[search_root.path().to_path_buf()],
-    );
+    let blocks =
+        PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).manifest_assets("html");
     assert!(blocks.is_empty());
 }
 
@@ -83,8 +79,11 @@ fn e2e_auto_detected_manifest_package_assets() {
     let project_path = project_dir.path();
 
     // Set up fake package in cache
-    let pkg_dir = cache_dir.path().join("typst/packages/e2ens/e2epkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(
+        &cache_dir.path().join("typst/packages"),
+        "@e2ens/e2epkg:0.1.0",
+    );
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"
@@ -118,7 +117,7 @@ Test document.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -171,8 +170,8 @@ Test document.
 }
 
 fn stage_package_in_data_dir(data_dir: &std::path::Path) {
-    let pkg_dir = data_dir.join("typst/packages/testns/testpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(&data_dir.join("typst/packages"), "@testns/testpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"
@@ -190,6 +189,9 @@ css_stylesheet = "style.css"
     std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
 }
 
+/// Compile `project_path` to HTML with extra environment — an `XDG_DATA_HOME`
+/// or `XDG_CACHE_HOME` redirect, so a staged [`FakePackage`] is found without
+/// touching the real Typst package cache.
 fn run_rheo_compile(
     project_path: &std::path::Path,
     build_dir: &std::path::Path,
@@ -233,7 +235,7 @@ Opt-out test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n\n[html]\nauto_detect_packages = false\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -293,7 +295,7 @@ Non-preview auto-detect test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -369,7 +371,7 @@ Copy pattern test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -411,8 +413,8 @@ Copy pattern test.
 /// package's own code by package spec, since inlined text resolves against the
 /// project root rather than the package directory.
 fn stage_marrow_package(data_dir: &std::path::Path) {
-    let pkg_dir = data_dir.join("typst/packages/mns/mpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(&data_dir.join("typst/packages"), "@mns/mpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"[package]
@@ -446,7 +448,6 @@ entrypoint = "lib.typ"
 
 /// E2e: a package shipping its own `.marrow.typ` mints pages purely because the
 /// project imports it — the project writes no marrow and no rheo.toml entry.
-/// See rheo bead rheo-bundle-pkg-root-i24.
 #[test]
 fn e2e_package_declared_marrow_mints_a_page() {
     let data_dir = tempfile::tempdir().unwrap();
@@ -468,7 +469,7 @@ fn e2e_package_declared_marrow_mints_a_page() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -553,7 +554,7 @@ fn package_marrow_respects_auto_detect_opt_out() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n\n[html]\nauto_detect_packages = false\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -591,8 +592,8 @@ fn package_marrow_respects_auto_detect_opt_out() {
 /// the search root to hand the detector.
 fn stage_package_with_marrow(marrow: Option<&str>) -> tempfile::TempDir {
     let search_root = tempfile::tempdir().unwrap();
-    let pkg_dir = search_root.path().join("mns/mpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(search_root.path(), "@mns/mpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         "[package]\nname = \"mpkg\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n",
@@ -612,7 +613,7 @@ fn detect_package_marrow_returns_the_file_verbatim() {
     let root = stage_package_with_marrow(Some(text));
 
     let imports = vec!["@mns/mpkg:0.1.0".to_string()];
-    let found = detect_package_marrow_in_dirs(&imports, &[root.path().to_path_buf()]);
+    let found = PackageIndex::new(&imports, &[root.path().to_path_buf()]).marrow();
 
     assert_eq!(found, vec![text.to_string()]);
 }
@@ -622,7 +623,7 @@ fn detect_package_marrow_skips_packages_without_one() {
     let root = stage_package_with_marrow(None);
 
     let imports = vec!["@mns/mpkg:0.1.0".to_string()];
-    let found = detect_package_marrow_in_dirs(&imports, &[root.path().to_path_buf()]);
+    let found = PackageIndex::new(&imports, &[root.path().to_path_buf()]).marrow();
 
     assert!(found.is_empty());
 }
@@ -632,20 +633,13 @@ fn detect_package_marrow_skips_packages_without_one() {
 #[test]
 fn detect_package_marrow_collects_every_package_in_import_order() {
     let search_root = tempfile::tempdir().unwrap();
-    for (ns, text) in [("apkg", "#let a = 1\n"), ("bpkg", "#let b = 2\n")] {
-        let pkg_dir = search_root.path().join(format!("mns/{ns}/0.1.0"));
-        std::fs::create_dir_all(&pkg_dir).unwrap();
-        std::fs::write(
-            pkg_dir.join("typst.toml"),
-            format!("[package]\nname = \"{ns}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"),
-        )
-        .unwrap();
-        std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
-        std::fs::write(pkg_dir.join(".marrow.typ"), text).unwrap();
+    for (name, text) in [("apkg", "#let a = 1\n"), ("bpkg", "#let b = 2\n")] {
+        FakePackage::new(search_root.path(), &format!("@mns/{name}:0.1.0"))
+            .file(".marrow.typ", text);
     }
 
     let imports = vec!["@mns/bpkg:0.1.0".to_string(), "@mns/apkg:0.1.0".to_string()];
-    let found = detect_package_marrow_in_dirs(&imports, &[search_root.path().to_path_buf()]);
+    let found = PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).marrow();
 
     assert_eq!(
         found,
@@ -684,7 +678,7 @@ fn e2e_project_and_package_marrow_both_inline() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\nmarrow = \"bundle-root.typ\"\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -732,15 +726,12 @@ fn e2e_project_and_package_marrow_both_inline() {
 
 /// Stage a package at `mns/<name>/0.1.0` shipping the given marrow text.
 fn stage_named_marrow_package(data_dir: &std::path::Path, name: &str, marrow: &str) {
-    let pkg_dir = data_dir.join(format!("typst/packages/mns/{name}/0.1.0"));
-    std::fs::create_dir_all(&pkg_dir).unwrap();
-    std::fs::write(
-        pkg_dir.join("typst.toml"),
-        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"),
+    FakePackage::new(
+        &data_dir.join("typst/packages"),
+        &format!("@mns/{name}:0.1.0"),
     )
-    .unwrap();
-    std::fs::write(pkg_dir.join("lib.typ"), "#let marker = \"present\"\n").unwrap();
-    std::fs::write(pkg_dir.join(".marrow.typ"), marrow).unwrap();
+    .file("lib.typ", "#let marker = \"present\"\n")
+    .file(".marrow.typ", marrow);
 }
 
 /// Several imported packages may each ship a `.marrow.typ`, and every one is
@@ -786,7 +777,7 @@ Two packages imported.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -862,7 +853,7 @@ Scope test.
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -909,7 +900,7 @@ fn e2e_empty_package_marrow_is_a_no_op() {
         project_path.join("rheo.toml"),
         format!(
             "version = \"{}\"\nformats = [\"html\"]\n",
-            env!("CARGO_PKG_VERSION"),
+            manifest_version::CURRENT,
         ),
     )
     .unwrap();
@@ -929,4 +920,144 @@ fn e2e_empty_package_marrow_is_a_no_op() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(build_dir.join("html/main.html").exists());
+}
+
+/// Stage a package under `search_root` whose `typst.toml` is exactly `body` —
+/// for a manifest whose own contents are the subject.
+fn stage_manifest(search_root: &std::path::Path, ns: &str, name: &str, version: &str, body: &str) {
+    FakePackage::new(search_root, &format!("@{ns}/{name}:{version}")).manifest(body);
+}
+
+#[test]
+fn min_version_below_current_is_accepted() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo]\nmin_version = \"0.1.0\"\n",
+    );
+    assert!(
+        PackageIndex::new(
+            &["@testns/testpkg:0.1.0".to_string()],
+            &[search_root.path().to_path_buf()]
+        )
+        .check_min_versions()
+        .is_ok()
+    );
+}
+
+#[test]
+fn min_version_above_current_is_rejected() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo]\nmin_version = \"99.0.0\"\n",
+    );
+    let err = PackageIndex::new(
+        &["@testns/testpkg:0.1.0".to_string()],
+        &[search_root.path().to_path_buf()],
+    )
+    .check_min_versions()
+    .unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("@testns/testpkg:0.1.0"));
+    assert!(message.contains("99.0.0"));
+    // Compared against rheo-core's own build-time version, not this test
+    // binary's — rheo-tests and rheo are versioned independently.
+    assert!(message.contains(manifest_version::CURRENT));
+}
+
+#[test]
+fn no_min_version_is_accepted() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo.html]\ncss_stylesheet = \"style.css\"\n",
+    );
+    assert!(
+        PackageIndex::new(
+            &["@testns/testpkg:0.1.0".to_string()],
+            &[search_root.path().to_path_buf()]
+        )
+        .check_min_versions()
+        .is_ok()
+    );
+}
+
+/// One build reports every stale package, not just the first, one line each.
+#[test]
+fn min_version_names_every_offender_in_one_build() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "ns",
+        "a",
+        "1.0",
+        "[tool.rheo]\nmin_version = \"99.0.0\"\n",
+    );
+    stage_manifest(
+        search_root.path(),
+        "ns",
+        "b",
+        "1.0",
+        "[tool.rheo]\nmin_version = \"98.0.0\"\n",
+    );
+    stage_manifest(
+        search_root.path(),
+        "ns",
+        "c",
+        "1.0",
+        "[tool.rheo]\nmin_version = \"0.1.0\"\n",
+    );
+
+    let err = PackageIndex::new(
+        &[
+            "@ns/a:1.0".to_string(),
+            "@ns/b:1.0".to_string(),
+            "@ns/c:1.0".to_string(),
+        ],
+        &[search_root.path().to_path_buf()],
+    )
+    .check_min_versions()
+    .unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("@ns/a:1.0") && message.contains("99.0.0"));
+    assert!(message.contains("@ns/b:1.0") && message.contains("98.0.0"));
+    assert!(
+        !message.contains("@ns/c:1.0"),
+        "satisfied package named as an offender"
+    );
+}
+
+/// The documented trap: a bare `min_version` key after `[tool.rheo.<format>]`,
+/// with no `[tool.rheo]` header of its own, is scoped by TOML to the last
+/// header seen — it lands inside that subtable, not `[tool.rheo]`, so the
+/// floor is silently never read rather than enforced.
+#[test]
+fn min_version_misplaced_under_format_subtable_is_not_read() {
+    let search_root = tempfile::tempdir().unwrap();
+    stage_manifest(
+        search_root.path(),
+        "testns",
+        "testpkg",
+        "0.1.0",
+        "[tool.rheo.html]\ncss_stylesheet = \"style.css\"\nmin_version = \"99.0.0\"\n",
+    );
+    assert!(
+        PackageIndex::new(
+            &["@testns/testpkg:0.1.0".to_string()],
+            &[search_root.path().to_path_buf()]
+        )
+        .check_min_versions()
+        .is_ok(),
+        "misplaced min_version should be silently ignored, not enforced"
+    );
 }

@@ -1,2 +1,0 @@
-= Index
-Body text.

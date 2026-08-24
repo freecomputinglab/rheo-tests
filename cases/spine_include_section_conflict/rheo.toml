@@ -1,0 +1,9 @@
+version = "0.6.0"
+formats = ["html"]
+
+[html.spine]
+include = ["main.typ"]
+
+[[html.spine.section]]
+name = "guide"
+include = ["main.typ"]

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<transclusions>
+  <a>&lt;p&gt;Wrapped main body WRAPPEDMAIN.&lt;/p&gt;</a>
+  <b>&lt;p&gt;Wrapped main body WRAPPEDMAIN.&lt;/p&gt;</b>
+  <c><p>Wrapped main body WRAPPEDMAIN.</p></c>
+  <d>&lt;h2&gt;Plain&lt;/h2&gt;&lt;p&gt;Plain whole-body content PLAINBODY, also containing WRAPPEDCHROME as ordinary text.&lt;/p&gt;</d>
+</transclusions>

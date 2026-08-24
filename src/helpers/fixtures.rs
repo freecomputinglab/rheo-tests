@@ -12,6 +12,8 @@ pub enum TestCase {
         name: String,
         /// Project path relative to rheo top-level.
         project_path: PathBuf,
+        /// Metadata from a `@rheo:test` marker in a top-level `.typ` file, if any.
+        metadata: Option<super::markers::TestMetadata>,
     },
     /// Test a single .typ file
     SingleFile {
@@ -72,6 +74,7 @@ impl TestCase {
         } else if fs_metadata.is_dir() {
             Self::Directory {
                 name,
+                metadata: read_directory_test_metadata(path),
                 project_path: path.into(),
             }
         } else {
@@ -108,11 +111,27 @@ impl TestCase {
         matches!(self, TestCase::SingleFile { .. })
     }
 
-    /// Get test metadata for SingleFile tests, None for Directory tests
+    /// Get test metadata: from the file itself for SingleFile tests, from a
+    /// top-level `.typ` marker file for Directory tests (see
+    /// `read_directory_test_metadata`).
     pub fn metadata(&self) -> Option<&super::markers::TestMetadata> {
         match self {
             TestCase::SingleFile { metadata, .. } => metadata.as_ref(),
-            TestCase::Directory { .. } => None,
+            TestCase::Directory { metadata, .. } => metadata.as_ref(),
         }
     }
+}
+
+/// Reads `@rheo:test` metadata from the first (by filename) top-level `.typ`
+/// file in `dir` that carries the marker. Mirrors the convention already used
+/// by directory cases like `cases/math/main.typ`.
+fn read_directory_test_metadata(dir: &Path) -> Option<super::markers::TestMetadata> {
+    let mut typ_files: Vec<PathBuf> = fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("typ"))
+        .collect();
+    typ_files.sort();
+    typ_files.iter().find_map(|p| read_test_metadata(p))
 }

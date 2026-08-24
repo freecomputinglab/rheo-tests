@@ -1,9 +1,5 @@
 version = "0.4.0"
 formats = ["html"]
 
-[html]
-feed_base_url = "https://example.com"
-feed_title = "Bundle Ref Test Feed"
-
 [html.spine]
 title = "Bundle Cross-Directory Test"

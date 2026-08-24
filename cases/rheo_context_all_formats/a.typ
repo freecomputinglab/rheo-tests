@@ -16,6 +16,9 @@ The output extension for this format is ext=#rheo-context().at("ext", default: "
   assert(type(ctx.handle) == str, message: "handle must be str")
   assert(type(ctx.spine) == array, message: "spine must be array")
   assert(type(ctx.spine-flat) == array, message: "spine-flat must be array")
+  assert(type(ctx.rheo-version) == str, message: "rheo-version must be str")
+  assert(ctx.rheo-version.split(".").len() == 3, message: "rheo-version must be semver-shaped, got " + ctx.rheo-version)
+  assert(ctx.rheo-version.split(".").map(int).at(0) >= 0, message: "rheo-version components must be integers")
 
   // target/ext: both present (html/epub) or both absent (PDF), never one.
   assert(("target" in ctx) == ("ext" in ctx), message: "target and ext must appear together")
@@ -38,4 +41,5 @@ The output extension for this format is ext=#rheo-context().at("ext", default: "
   assert(s.spine-flat == ctx.spine-flat, message: "sys.inputs spine-flat must equal rheo-context().spine-flat")
   assert(("target" in s) == ("target" in ctx), message: "sys/ctx target presence must match")
   assert(("ext" in s) == ("ext" in ctx), message: "sys/ctx ext presence must match")
+  assert(s.rheo-version == ctx.rheo-version, message: "sys.inputs rheo-version must equal rheo-context().rheo-version")
 }

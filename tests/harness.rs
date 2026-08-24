@@ -1,14 +1,43 @@
 use ntest::test_case;
-use rheo_core::{RheoConfig, config::project::ProjectConfig};
+use rheo_core::{RheoConfig, config::manifest_version, config::project::ProjectConfig};
 use rheo_tests::helpers::{
     cli::rheo_cli_command,
-    comparison::{verify_epub_output, verify_html_output, verify_pdf_output},
+    comparison::{
+        compare_or_update_text_asset, verify_epub_output, verify_html_output, verify_pdf_output,
+    },
+    compiled::{CompiledFixture, TestStore, patch_manifest_version},
     fixtures::TestCase,
+    project::TempProject,
     reference::{update_epub_references, update_html_references, update_pdf_references},
     test_store::copy_project_to_test_store,
 };
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Asserts every pattern is a substring of `output`; `label` names the kind of
+/// pattern (e.g. `"error"`, `"warning"`) for the failure message.
+/// The single `.epub` a build produced, asserting there is exactly one.
+fn sole_epub(built: &CompiledFixture) -> PathBuf {
+    let epubs: Vec<PathBuf> = std::fs::read_dir(built.path("epub"))
+        .expect("read build/epub")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .collect();
+    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
+    epubs.into_iter().next().expect("one epub")
+}
+
+fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
+    for pattern in patterns {
+        assert!(
+            output.contains(pattern.as_str()),
+            "Expected {} output to contain pattern '{}', but it was not found.\nFull output:\n{}",
+            label,
+            pattern,
+            output
+        );
+    }
+}
 
 #[test_case("examples/blog_site")]
 #[test_case("examples/blog_post")]
@@ -23,18 +52,18 @@ use std::path::PathBuf;
 #[test_case("cases/escape_form_nested")]
 #[test_case("cases/deep_nested_href")]
 #[test_case("cases/section_handle_nesting")]
-#[test_case("cases/feed_nested_href")]
 #[test_case("cases/epub_nested_spine")]
 #[test_case("cases/bundle_ref_cross_directory")]
-#[test_case("cases/feed_document_defaults")]
 #[test_case("cases/epub_inferred_spine")]
 #[test_case("cases/link_path_edge_cases")]
+#[test_case("cases/link_rule_static")]
 #[test_case("cases/link_transformation")]
 #[test_case("cases/links_with_fragments")]
 #[test_case("cases/dead_link_error.typ")]
 #[test_case("cases/multiple_links_inline")]
 #[test_case("cases/pdf_individual")]
 #[test_case("cases/pdf_merge_false")]
+#[test_case("cases/pdf_spine_merge_false")]
 #[test_case("cases/merged_pdf_cross_links")]
 #[test_case("cases/script_injection")]
 #[test_case("cases/script_injection_no_css")]
@@ -54,6 +83,7 @@ use std::path::PathBuf;
 #[test_case("cases/error_formatting/array_index_error.typ")]
 #[test_case("cases/removed_rheo_target_helper.typ")]
 #[test_case("cases/removed_is_rheo_helpers.typ")]
+#[test_case("cases/no_rheo_vars")]
 #[test_case("cases/merged_subdir_imports")]
 #[test_case("cases/spine_field_level_merge")]
 #[test_case("cases/rheo_package_slides")]
@@ -62,233 +92,186 @@ use std::path::PathBuf;
 #[test_case("cases/spine_scan_tree")]
 #[test_case("cases/spine_exclude")]
 #[test_case("cases/spine_sections")]
+#[test_case("cases/spine_include")]
+#[test_case("cases/spine_include_section_conflict")]
+#[test_case("cases/spine_include_no_match")]
 #[test_case("cases/spine_performat")]
 #[test_case("cases/rheo_context_sys_inputs")]
 #[test_case("cases/spine_document_metadata")]
 #[test_case("cases/document_title_string_form")]
 #[test_case("cases/rheo_context_all_formats")]
 #[test_case("cases/rheo_context_escaping")]
-#[test_case("cases/atom_feed_basic")]
-#[test_case("cases/atom_feed_author")]
-#[test_case("cases/atom_feed_title")]
-#[test_case("cases/atom_feed_title_fallback")]
-#[test_case("cases/atom_feed_content_dir")]
 #[test_case("cases/html_css_injection")]
-#[test_case("cases/rheo_var_non_string.typ")]
+#[test_case("cases/head_hoist")]
+#[test_case("cases/head_control")]
+#[test_case("cases/template_element")]
 #[test_case("cases/footnote_reset_per_page")]
 #[test_case("cases/footnote_no_reset")]
+#[test_case("cases/bundle_multi_bibliography")]
+#[test_case("cases/metadata_template_title")]
+#[test_case("cases/metadata_show_and_code_block")]
+#[test_case("cases/metadata_nonliteral_values")]
+#[test_case("cases/metadata_multiple_set_rules")]
+#[test_case("cases/metadata_handle_anchor_display_text")]
+#[test_case("cases/document_date_incomplete.typ")]
+#[test_case("cases/retired_key_merge_warns")]
+#[test_case("cases/version_mismatch_migrate_warns")]
+#[test_case("cases/retired_feed_keys_warn")]
+#[test_case("cases/font_dirs_disables_autoscan")]
+#[test_case("cases/transclude_missing_page")]
+#[test_case("cases/transclude_attr_gt")]
 #[test_case("store/compat/merged-imports")]
 fn run_test_case(name: &str) {
     let test_case = TestCase::new(name);
     let update_mode = env::var("UPDATE_REFERENCES").is_ok();
     let test_name = test_case.name();
     let original_project_path = test_case.project_path();
+    let is_single = test_case.is_single_file();
 
-    // Create isolated test store
-    let test_store = PathBuf::from("store").join(test_name);
+    let store = TestStore::fresh(test_name);
 
-    // Clean previous test artifacts
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
-    }
-    std::fs::create_dir_all(&test_store).expect("Failed to create test store");
-
-    // Copy project to test store for isolation
-    if test_case.is_single_file() {
-        // For single-file tests, copy just the file and its parent directory structure
-        let parent = original_project_path
+    // A single-file case is copied together with its parent directory, so a
+    // sibling it imports comes along.
+    let copy_from = if is_single {
+        original_project_path
             .parent()
-            .expect("Single file should have parent");
-        copy_project_to_test_store(parent, &test_store)
-            .expect("Failed to copy project to test store");
+            .expect("single-file case has a parent directory")
     } else {
-        // For directory tests, copy the whole project
-        copy_project_to_test_store(original_project_path, &test_store)
-            .expect("Failed to copy project to test store");
+        original_project_path
+    };
+    copy_project_to_test_store(copy_from, store.path()).expect("copy project to test store");
+
+    // `@rheo:keep-version` opts out, to exercise a deliberately stale version.
+    if !test_case.metadata().is_some_and(|m| m.keep_version) {
+        patch_manifest_version(&store.join("rheo.toml"));
     }
 
-    // Patch rheo.toml version to match current crate version
-    let store_toml = test_store.join("rheo.toml");
-    if store_toml.exists() {
-        let content = std::fs::read_to_string(&store_toml).expect("Failed to read rheo.toml");
-        let patched = content.replace(
-            &format!(
-                "version = \"{}\"",
-                content
-                    .lines()
-                    .find_map(|l| l
-                        .strip_prefix("version = \"")
-                        .and_then(|s| s.strip_suffix('"')))
-                    .unwrap_or("")
-            ),
-            &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-        );
-        std::fs::write(&store_toml, patched).expect("Failed to patch rheo.toml version");
-    }
-
-    // Use test store as project path
-    let project_path = if test_case.is_single_file() {
-        let rel_path = original_project_path
-            .strip_prefix(
-                original_project_path
-                    .parent()
-                    .expect("Single file should have parent"),
-            )
-            .expect("Failed to get relative path");
-        test_store.join(rel_path)
+    let project_path = if is_single {
+        store.join(
+            original_project_path
+                .file_name()
+                .expect("single-file case has a file name"),
+        )
     } else {
-        test_store.clone()
+        store.path().to_path_buf()
     };
 
-    // Load project from isolated copy
-    let project = ProjectConfig::from_path(&project_path, None).expect("Failed to load project");
-    let config = RheoConfig::load(&project.root);
+    let expects_error = test_case.metadata().and_then(|m| m.expect.as_deref()) == Some("error");
 
-    // Get declared formats from test case (respects markers for single-file tests)
+    // A rheo.toml rejected at config validation never reaches the compile below,
+    // so for an error case the load failure itself is the expected error.
+    let project = match ProjectConfig::from_path(&project_path, None) {
+        Ok(project) => project,
+        Err(e) if expects_error => {
+            if let Some(metadata) = test_case.metadata() {
+                assert_patterns_present(&metadata.error_patterns, &e.to_string(), "error");
+            }
+            return;
+        }
+        Err(e) => panic!("Failed to load project for {test_name}: {e}"),
+    };
+    let config = RheoConfig::load(&project.root);
     let declared_formats = test_case.formats();
 
-    // Check environment variables for format filtering
     let env_html = env::var("RUN_HTML_TESTS").is_ok();
     let env_pdf = env::var("RUN_PDF_TESTS").is_ok();
     let env_epub = env::var("RUN_EPUB_TESTS").is_ok();
-
-    // If no env vars set, run all declared formats
     let run_all = !env_html && !env_pdf && !env_epub;
 
-    // Compute which formats to actually run
-    // For single-file tests: use declared formats (config check optional, markers are authoritative)
-    // For directory tests: require config support (preserve existing behavior)
-    let run_html = declared_formats.iter().any(|f| f == "html")
-        && (run_all || env_html)
-        && (test_case.is_single_file() || config.as_ref().is_ok_and(|cfg| cfg.has_format("html")));
-    let run_pdf = declared_formats.iter().any(|f| f == "pdf")
-        && (run_all || env_pdf)
-        && (test_case.is_single_file() || config.as_ref().is_ok_and(|cfg| cfg.has_format("pdf")));
-    let run_epub = declared_formats.iter().any(|f| f == "epub")
-        && (run_all || env_epub)
-        && (test_case.is_single_file() || config.as_ref().is_ok_and(|cfg| cfg.has_format("epub")));
+    // A single-file case trusts its own markers; a directory case must also be
+    // configured for the format.
+    let enabled = |format: &str, env_selected: bool| {
+        declared_formats.iter().any(|f| f == format)
+            && (run_all || env_selected)
+            && (is_single || config.as_ref().is_ok_and(|cfg| cfg.has_format(format)))
+    };
+    let (run_html, run_pdf, run_epub) = (
+        enabled("html", env_html),
+        enabled("pdf", env_pdf),
+        enabled("epub", env_epub),
+    );
 
-    // Get build directory in test store
-    let build_dir = test_store.join("build");
-
-    // Build compile command with format flags
-    let mut compile_args = vec!["compile", project_path.to_str().unwrap()];
-
-    // Use isolated build directory
-    compile_args.push("--build-dir");
-    compile_args.push(build_dir.to_str().unwrap());
-
-    // For single-file tests, add explicit format flags based on declared formats
-    // For directory tests, let rheo use config/defaults (no flags = backward compatible)
-    if test_case.is_single_file() {
-        if run_html {
-            compile_args.push("--html");
-        }
-        if run_pdf {
-            compile_args.push("--pdf");
-        }
-        if run_epub {
-            compile_args.push("--epub");
+    let build_dir = store.join("build");
+    let mut compile_args = vec![
+        "compile",
+        project_path.to_str().expect("utf-8 project path"),
+        "--build-dir",
+        build_dir.to_str().expect("utf-8 build path"),
+    ];
+    // A directory case passes no format flags at all, leaving rheo's own
+    // config/defaults to decide — which is what it is there to exercise.
+    if is_single {
+        for (flag, run) in [
+            ("--html", run_html),
+            ("--pdf", run_pdf),
+            ("--epub", run_epub),
+        ] {
+            if run {
+                compile_args.push(flag);
+            }
         }
     }
 
-    // Compile the project using rheo CLI logic
     let output = rheo_cli_command()
         .args(&compile_args)
         .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
         .output()
         .expect("Failed to run rheo compile");
-
-    // Check if test expects compilation error
-    let expects_error = test_case
-        .metadata()
-        .and_then(|m| m.expect.as_ref())
-        .map(|e| e == "error")
-        .unwrap_or(false);
+    let stderr = String::from_utf8_lossy(&output.stderr);
 
     if expects_error {
-        // Test expects compilation to fail
         assert!(
             !output.status.success(),
-            "Expected compilation to fail for {}, but it succeeded",
-            test_name
+            "Expected compilation to fail for {test_name}, but it succeeded"
         );
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        // Check all required error patterns
         if let Some(metadata) = test_case.metadata() {
-            for pattern in &metadata.error_patterns {
-                assert!(
-                    stderr.contains(pattern),
-                    "Expected error output to contain pattern '{}', but it was not found.\nFull stderr:\n{}",
-                    pattern,
-                    stderr
-                );
-            }
-        }
-
-        // For error cases, skip reference comparison and return early
-        // Clean test store before returning
-        if test_store.exists() {
-            std::fs::remove_dir_all(&test_store).ok();
+            assert_patterns_present(&metadata.error_patterns, &stderr, "error");
         }
         return;
     }
 
-    // For success cases, continue with existing logic
-    if !output.status.success() {
-        panic!(
-            "Compilation failed for {}: {}",
-            test_name,
-            String::from_utf8_lossy(&output.stderr)
-        );
+    assert!(
+        output.status.success(),
+        "Compilation failed for {test_name}: {stderr}"
+    );
+
+    // A successful build may still be required to warn (e.g. retired-key or
+    // version-mismatch notices).
+    if let Some(metadata) = test_case.metadata() {
+        assert_patterns_present(&metadata.warn_patterns, &stderr, "warning");
     }
 
-    // let run_epub = env::var("RUN_EPUB_TESTS").is_ok() || env::var("RUN_EPUB_TESTS").is_err();
-
-    // Test HTML output
-    if run_html {
-        let html_output = build_dir.join("html");
-        if html_output.exists() {
-            if update_mode {
-                update_html_references(test_name, &html_output, &project_path)
-                    .expect("Failed to update HTML references");
-            } else {
-                verify_html_output(test_name, &html_output, test_case.is_single_file());
-            }
+    let check_html = |dir: &Path| {
+        if update_mode {
+            update_html_references(test_name, dir, &project_path).expect("update HTML references");
+        } else {
+            verify_html_output(test_name, dir, is_single);
         }
-    }
-
-    // Test PDF output
-    if run_pdf {
-        let pdf_output = build_dir.join("pdf");
-        if pdf_output.exists() {
-            if update_mode {
-                update_pdf_references(test_name, &pdf_output)
-                    .expect("Failed to update PDF references");
-            } else {
-                verify_pdf_output(test_name, &pdf_output);
-            }
+    };
+    let check_pdf = |dir: &Path| {
+        if update_mode {
+            update_pdf_references(test_name, dir).expect("update PDF references");
+        } else {
+            verify_pdf_output(test_name, dir);
         }
-    }
-
-    // Test EPUB output
-    if run_epub {
-        let epub_output = build_dir.join("epub");
-        if epub_output.exists() {
-            if update_mode {
-                update_epub_references(test_name, &epub_output)
-                    .expect("Failed to update EPUB references");
-            } else {
-                verify_epub_output(test_name, &epub_output);
-            }
+    };
+    let check_epub = |dir: &Path| {
+        if update_mode {
+            update_epub_references(test_name, dir).expect("update EPUB references");
+        } else {
+            verify_epub_output(test_name, dir);
         }
-    }
-
-    // Clean test store after test
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
+    };
+    let checks: [(&str, bool, &dyn Fn(&Path)); 3] = [
+        ("html", run_html, &check_html),
+        ("pdf", run_pdf, &check_pdf),
+        ("epub", run_epub, &check_epub),
+    ];
+    for (format, run, check) in checks {
+        let dir = build_dir.join(format);
+        if run && dir.exists() {
+            check(&dir);
+        }
     }
 }
 
@@ -539,8 +522,8 @@ fn test_warning_formatting() {
 /// Test that global and per-plugin `asset` patterns in rheo.toml copy files into the build output.
 #[test]
 fn test_asset_patterns() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Source files to copy
     std::fs::write(project_path.join("readme.txt"), "hello world")
@@ -554,33 +537,18 @@ fn test_asset_patterns() {
         .expect("Failed to write main.typ");
 
     // rheo.toml: global copies readme.txt; html-only copies assets/logo.png
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             copy = [\"readme.txt\"]\n\
-             \n\
-             [html.assets]\n\
-             copy = [\"assets/logo.png\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         copy = [\"readme.txt\"]\n\
+         \n\
+         [html.assets]\n\
+         copy = [\"assets/logo.png\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -611,8 +579,8 @@ fn test_asset_patterns() {
 /// Test that copy globs across multiple [[html.assets]] blocks are all collected.
 #[test]
 fn test_asset_patterns_multiple_blocks() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Source files to copy from two different directories
     std::fs::create_dir_all(project_path.join("css")).expect("Failed to create css dir");
@@ -627,35 +595,20 @@ fn test_asset_patterns_multiple_blocks() {
         .expect("Failed to write main.typ");
 
     // rheo.toml: two [[html.assets]] blocks each with their own copy patterns
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"css/**/*\"]\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"js/**/*\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"css/**/*\"]\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"js/**/*\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -677,8 +630,8 @@ fn test_asset_patterns_multiple_blocks() {
 /// Test that `**/*` glob patterns recursively copy nested files into the build output.
 #[test]
 fn test_asset_patterns_glob_recursive() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Create nested directory structure
     let icons_dir = project_path.join("images/icons");
@@ -693,32 +646,17 @@ fn test_asset_patterns_glob_recursive() {
         .expect("Failed to write main.typ");
 
     // rheo.toml with recursive glob pattern
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             copy = [\"images/**/*\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [html.assets]\n\
+         copy = [\"images/**/*\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -749,8 +687,8 @@ fn test_asset_patterns_glob_recursive() {
 /// preserving project-root-relative structure underneath.
 #[test]
 fn test_asset_patterns_dest_preserves_structure() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Single file + nested directory structure
     std::fs::write(project_path.join("image.png"), b"\x89PNG\r\n\x1a\n")
@@ -765,36 +703,21 @@ fn test_asset_patterns_dest_preserves_structure() {
         .expect("Failed to write main.typ");
 
     // rheo.toml: one block with dest, one without
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"image.png\", \"images/**/*\"]\n\
-             dest = \"allassets\"\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"main.typ\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"image.png\", \"images/**/*\"]\n\
+         dest = \"allassets\"\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"main.typ\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -824,8 +747,8 @@ fn test_asset_patterns_dest_preserves_structure() {
 /// End-to-end test that `dest` works for both named assets and copy globs together.
 #[test]
 fn test_asset_dest_subdirectory() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Source files
     std::fs::write(project_path.join("index.typ"), "= Hello\n\nWorld.\n").unwrap();
@@ -834,34 +757,19 @@ fn test_asset_dest_subdirectory() {
     std::fs::create_dir_all(project_path.join("dist")).unwrap();
     std::fs::write(project_path.join("dist/index.js"), "console.log(\"hi\");").unwrap();
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[html.assets]]\n\
-             dest = \"allassets\"\n\
-             copy = [\"image.png\"]\n\
-             js_scripts     = \"dist/index.js\"\n\
-             css_stylesheet = \"index.css\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .unwrap();
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [[html.assets]]\n\
+         dest = \"allassets\"\n\
+         copy = [\"image.png\"]\n\
+         js_scripts     = \"dist/index.js\"\n\
+         css_stylesheet = \"index.css\"\n",
+    ));
 
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -975,9 +883,9 @@ fn test_rheo_init_and_compile() {
 /// Test that asset path overrides work end-to-end via rheo.toml
 #[test]
 fn test_asset_path_override() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+    let build_dir = project.build_dir();
 
     // Custom CSS at non-default path
     std::fs::write(project_path.join("custom.css"), "body { color: red; }")
@@ -988,30 +896,15 @@ fn test_asset_path_override() {
         .expect("Failed to write main.typ");
 
     // rheo.toml with asset path override
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             css_stylesheet = \"custom.css\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"html\"]\n\
+        \n\
+        [html.assets]\n\
+        css_stylesheet = \"custom.css\"\n",
+    ));
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -1043,9 +936,9 @@ fn test_asset_path_override() {
 /// Test that subdirectory path overrides work end-to-end
 #[test]
 fn test_asset_path_override_subdirectory() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+    let build_dir = project.build_dir();
 
     // Custom CSS in subdirectory
     let styles_dir = project_path.join("styles");
@@ -1058,30 +951,15 @@ fn test_asset_path_override_subdirectory() {
         .expect("Failed to write main.typ");
 
     // rheo.toml with subdirectory override
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             css_stylesheet = \"styles/custom.css\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [html.assets]\n\
+         css_stylesheet = \"styles/custom.css\"\n",
+    ));
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -1108,8 +986,8 @@ fn test_asset_path_override_subdirectory() {
 /// Test that multiple [[html.assets]] blocks produce multiple stylesheet/script links in HTML.
 #[test]
 fn test_asset_multiple_blocks_inject_all() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     std::fs::write(project_path.join("one.css"), "/* one */").unwrap();
     std::fs::write(project_path.join("two.css"), "/* two */").unwrap();
@@ -1117,34 +995,19 @@ fn test_asset_multiple_blocks_inject_all() {
     std::fs::write(project_path.join("two.js"), "// two").unwrap();
     std::fs::write(project_path.join("hello.typ"), "Hello").unwrap();
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             [[html.assets]]\n\
-             css_stylesheet = \"one.css\"\n\
-             js_scripts     = \"one.js\"\n\
-             [[html.assets]]\n\
-             css_stylesheet = \"two.css\"\n\
-             js_scripts     = \"two.js\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .unwrap();
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         [[html.assets]]\n\
+         css_stylesheet = \"one.css\"\n\
+         js_scripts     = \"one.js\"\n\
+         [[html.assets]]\n\
+         css_stylesheet = \"two.css\"\n\
+         js_scripts     = \"two.js\"\n",
+    ));
 
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -1173,11 +1036,11 @@ fn test_asset_multiple_blocks_inject_all() {
 /// (per-format value) and that the removed `sys.inputs.rheo-target` key is gone.
 ///
 /// Companion to the `is-rheo-*` helper coverage; this asserts the raw context
-/// field and the key removal directly. See rheo epic `rheo-tgt-epic-714`.
+/// field and the key removal directly.
 #[test]
 fn test_rheo_context_target_and_no_legacy_key() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // A single vertebra renders the raw context target and probes the old key.
     std::fs::write(
@@ -1187,17 +1050,9 @@ fn test_rheo_context_target_and_no_legacy_key() {
          oldkey=#{ if \"rheo-target\" in sys.inputs { \"present\" } else { \"absent\" } }\n",
     )
     .unwrap();
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\", \"epub\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .unwrap();
+    project.manifest("formats = [\"html\", \"epub\"]\n");
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
     let output = rheo_cli_command()
         .args([
             "compile",
@@ -1262,25 +1117,20 @@ fn test_rheo_context_target_and_no_legacy_key() {
 /// referencing the original source file path (not a temp path).
 #[test]
 fn test_merged_imports_missing_file() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
     let content_dir = project_path.join("content");
     std::fs::create_dir_all(&content_dir).expect("Failed to create content dir");
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"pdf\"]\n\
-             \n\
-             [pdf.spine]\n\
-             title = \"Missing Import Test\"\n\
-             vertebrae = [\"content/chapter.typ\"]\n\
-             merge = true\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"pdf\"]\n\
+        \n\
+        [pdf.spine]\n\
+        title = \"Missing Import Test\"\n\
+        vertebrae = [\"content/chapter.typ\"]\n\
+        merge = true\n",
+    ));
 
     // chapter.typ imports a file that does not exist
     std::fs::write(
@@ -1289,7 +1139,7 @@ fn test_merged_imports_missing_file() {
     )
     .expect("Failed to write chapter.typ");
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
     let output = rheo_cli_command()
         .args([
@@ -1325,27 +1175,21 @@ fn test_merged_imports_missing_file() {
 /// Typst compilation begins.
 #[test]
 fn test_escape_label_collision_error() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
     let content_dir = project_path.join("content");
     let sub_dir = content_dir.join("a");
     std::fs::create_dir_all(&sub_dir).expect("Failed to create content/a");
-    let build_dir = project_path.join("build");
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             content_dir = \"content\"\n\
-             \n\
-             [html.spine]\n\
-             title = \"Escape Collision Test\"\n\
-             vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"html\"]\n\
+        content_dir = \"content\"\n\
+        \n\
+        [html.spine]\n\
+        title = \"Escape Collision Test\"\n\
+        vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
+    ));
 
     // root.typ hand-authors <a:file.typ>, which is the escape alias rheo would
     // synthesize for content/a/file.typ.
@@ -1361,17 +1205,7 @@ fn test_escape_label_collision_error() {
     )
     .expect("Failed to write a/file.typ");
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         !output.status.success(),
@@ -1395,38 +1229,22 @@ fn test_escape_label_collision_error() {
 /// (see reticulate/spine.rs SpineScan::build_section_nodes).
 #[test]
 fn test_spine_section_no_match_error() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[spine.section]]\n\
-             name = \"ghost\"\n\
-             include = [\"nope.typ\"]\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"html\"]\n\
+        \n\
+        [[spine.section]]\n\
+        name = \"ghost\"\n\
+        include = [\"nope.typ\"]\n",
+    ));
 
     std::fs::write(project_path.join("intro.typ"), "= Intro\n\nContent.\n")
         .expect("Failed to write intro.typ");
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         !output.status.success(),
@@ -1609,56 +1427,93 @@ fn migrate_converts_vertebrae_to_exclude() {
     );
 }
 
-/// The CLI warns — on an otherwise successful compile — when a document title
-/// loses content during the plain-text flattening used to build the spine.
-/// A styled title (`[_Italic_ Title]`) loses its emphasis; a string title does
-/// not. See rheo-m4w.
+/// `rheo migrate` REPORTS (never rewrites) the removed `[html] feed_*`
+/// rheo.toml keys and the removed `rheo-*` `.typ` variable bindings, since
+/// feed configuration does not map one-to-one onto `@rheo/feeds`'s Typst
+/// API.
 #[test]
-fn test_lossy_document_title_warning() {
-    let project = "cases/document_title_lossy_warning";
-    let build_dir = PathBuf::from("store").join("document_title_lossy_warning_build");
-    let _ = std::fs::remove_dir_all(&build_dir);
+fn migrate_reports_removed_feed_surface() {
+    let test_case = TestCase::new("cases/migrate_feed_removal");
+    let original_project_path = test_case.project_path();
 
+    let test_store = PathBuf::from("store").join("migrate_feed_removal");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let toml_before =
+        std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    let a_before = std::fs::read_to_string(test_store.join("a.typ")).expect("read a.typ");
+    let b_before = std::fs::read_to_string(test_store.join("b.typ")).expect("read b.typ");
+
+    // No --apply: this pass is report-only, so there is nothing to apply anyway.
     let output = rheo_cli_command()
-        .args([
-            "compile",
-            project,
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
+        .args(["migrate", test_store.to_str().unwrap()])
         .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
         .output()
-        .expect("Failed to run rheo compile");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // rheo's tracing logs go to stdout; Typst diagnostics to stderr. Check both.
-    let combined = format!("{stdout}{stderr}");
+        .expect("Failed to run rheo migrate");
     assert!(
         output.status.success(),
-        "compile should succeed despite the warning:\n{combined}"
+        "migrate failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // All three retired [html] keys named.
+    assert!(
+        stdout.contains("feed_base_url"),
+        "feed_base_url finding missing:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("feed_author"),
+        "feed_author finding missing:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("feed_include"),
+        "feed_include finding missing:\n{stdout}"
     );
 
-    // Exact user-facing message.
+    // Both removed `.typ` bindings named, each with its file:line location.
     assert!(
-        combined.contains(
-            "Rheo uses document titles as unique identifiers, and does not retain \
-             styling or sophisticated forms of Typst content when constructing spines"
-        ),
-        "missing lossy-title warning message:\n{combined}"
-    );
-    // Shows the original title content (with markup) and the stripped form.
-    assert!(
-        combined.contains("_Italic_"),
-        "warning should show the original title content:\n{combined}"
+        stdout.contains("a.typ:1") && stdout.contains("rheo-feed-exclude"),
+        "rheo-feed-exclude finding missing its location:\n{stdout}"
     );
     assert!(
-        combined.contains("Italic Title"),
-        "warning should show the stripped title:\n{combined}"
+        stdout.contains("b.typ:1") && stdout.contains("rheo-author"),
+        "rheo-author finding missing its location:\n{stdout}"
     );
 
-    let _ = std::fs::remove_dir_all(&build_dir);
+    // rheo-author is reported separately from the rheo-feed-* group, with
+    // its own real-rewrite replacement, not a "moved to a package" pointer.
+    let author_line = stdout
+        .lines()
+        .find(|l| l.contains("rheo-author"))
+        .unwrap_or_else(|| panic!("no line reports rheo-author:\n{stdout}"));
+    assert!(
+        author_line.contains("#set document(author:"),
+        "rheo-author finding should point at #set document(author:):\n{author_line}"
+    );
+    assert!(
+        !author_line.contains("@rheo/feeds"),
+        "rheo-author finding should not be grouped with the @rheo/feeds pointer:\n{author_line}"
+    );
+
+    // Every rheo-feed-*/feed_* finding points at the replacement package.
+    assert!(
+        stdout.contains("@rheo/feeds"),
+        "no finding mentions @rheo/feeds:\n{stdout}"
+    );
+
+    // Report-only: both files are byte-identical after the run.
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    let a_after = std::fs::read_to_string(test_store.join("a.typ")).expect("read a.typ");
+    let b_after = std::fs::read_to_string(test_store.join("b.typ")).expect("read b.typ");
+    assert_eq!(toml_before, toml_after, "rheo.toml must be untouched");
+    assert_eq!(a_before, a_after, "a.typ must be untouched");
+    assert_eq!(b_before, b_after, "b.typ must be untouched");
 }
 
 /// The built-in default stylesheet ships as a real linked `.css` asset (not an
@@ -1750,15 +1605,18 @@ fn test_external_config_flag() {
     // an asset override that only exists here — if the build honours it, the flag
     // works. Asset paths resolve relative to the project root (custom.css above).
     let config_file = config_dir.join("external.toml");
+    // Deliberately NOT a TempProject manifest: the whole point of this case is
+    // that rheo.toml lives OUTSIDE the project root, which TempProject always
+    // writes inside it.
     std::fs::write(
         &config_file,
         format!(
             "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             css_stylesheet = \"custom.css\"\n",
-            env!("CARGO_PKG_VERSION"),
+        formats = [\"html\"]\n\
+        \n\
+        [html.assets]\n\
+        css_stylesheet = \"custom.css\"\n",
+            manifest_version::CURRENT,
         ),
     )
     .expect("Failed to write external.toml");
@@ -1804,75 +1662,28 @@ fn test_external_config_flag() {
     );
 }
 
-/// Content-verifies a generated non-HTML asset — the Atom `feed.xml` — against a
-/// committed reference, closing the gap that `verify_html_output` only diffs
-/// `.html` files (feed.xml is copied into refs and presence-checked, never
-/// content-compared). The fixture dates every entry with `rheo-feed-updated`, so
-/// feed.xml is deterministic (no output-mtime fallback) and safe to byte-compare.
-/// Regenerate the reference with `UPDATE_REFERENCES=1`. See rheo-tests-rcx.
+/// Hand-rolls an Atom feed from `content/.marrow.typ` using only the three
+/// primitives a marrow can reach — `<rheo-content>` transclusion,
+/// `rheo-metadata-all()`, and `sys.inputs.rheo-context.spine-flat` — proving
+/// they suffice in place of the deleted Rust feed generator. Uses no `@rheo`
+/// package, so the fixture never depends on the Typst package cache.
+///
+/// `docs/feed-parity.md` records how this feed differs from the one that
+/// generator produced, since its own fixture and reference were deleted with
+/// it.
 #[test]
-fn test_feed_asset_verify() {
-    use rheo_tests::helpers::comparison::compare_text_asset;
+fn test_marrow_atom_feed() {
+    let built = CompiledFixture::compile("cases/marrow_atom_feed", "marrow_atom_feed", &["--html"])
+        .expect_success();
 
-    let test_store = PathBuf::from("store").join("feed_asset_verify");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(&PathBuf::from("cases/feed_asset_verify"), &test_store)
-        .expect("copy fixture");
-
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
-    assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let actual_feed = build_dir.join("html/feed.xml");
+    let actual_feed = built.path("html/feed.xml");
     assert!(actual_feed.exists(), "feed.xml not generated");
 
-    let ref_feed = PathBuf::from("ref/cases/feed_asset_verify/feed.xml");
-    if env::var("UPDATE_REFERENCES").is_ok() {
-        std::fs::create_dir_all(ref_feed.parent().unwrap()).expect("create ref dir");
-        std::fs::copy(&actual_feed, &ref_feed).expect("write ref");
-        println!("Updated feed.xml reference at {}", ref_feed.display());
-    } else {
-        compare_text_asset(&ref_feed, &actual_feed, "test_feed_asset_verify")
-            .expect("feed.xml content mismatch");
-    }
-
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
+    compare_or_update_text_asset(
+        &PathBuf::from("ref/cases/marrow_atom_feed/feed.xml"),
+        &actual_feed,
+        "test_marrow_atom_feed",
+    );
 }
 
 /// Marrow contributions: `content/.marrow.typ` is emitted at the Typst bundle
@@ -1881,64 +1692,21 @@ fn test_feed_asset_verify() {
 /// without being part of it: it is not a vertebra and must not produce
 /// `.marrow.html`. A bespoke test rather than a `#[test_case]` because this
 /// asserts on a non-HTML asset, on a file that must NOT exist, and on a second
-/// format run — none of which `verify_html_output` can do. See rheo beads
-/// rheo-bundle-root-cc4 (feature) and rheo-bundle-assets-x88 (the asset half).
-/// Regenerate the reference with `UPDATE_REFERENCES=1`.
+/// format run — none of which `verify_html_output` can do. Regenerate the
+/// reference with `UPDATE_REFERENCES=1`.
 #[test]
 fn test_marrow() {
-    use rheo_tests::helpers::comparison::compare_text_asset;
-
-    let test_store = PathBuf::from("store").join("marrow");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(&PathBuf::from("cases/marrow"), &test_store).expect("copy fixture");
-
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
-    assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let built = CompiledFixture::compile("cases/marrow", "marrow", &["--html"]).expect_success();
 
     // The marrow `document()` mints a page outside the spine.
-    let actual_page = build_dir.join("html/extra/hello.html");
+    let actual_page = built.path("html/extra/hello.html");
     assert!(
         actual_page.exists(),
         "marrow document() did not emit extra/hello.html"
     );
 
     // The marrow `asset()` lands verbatim, not routed through the HTML plugin.
-    let actual_asset = build_dir.join("html/extra/hello.txt");
+    let actual_asset = built.path("html/extra/hello.txt");
     assert!(
         actual_asset.exists(),
         "marrow asset() did not emit extra/hello.txt"
@@ -1951,48 +1719,53 @@ fn test_marrow() {
 
     // `.marrow.typ` is a contribution, not a vertebra: it gets no page of its own.
     assert!(
-        !build_dir.join("html/.marrow.html").exists(),
+        !built.path("html/.marrow.html").exists(),
         ".marrow.typ was compiled as an ordinary vertebra"
     );
 
-    let ref_page = PathBuf::from("ref/cases/marrow/extra/hello.html");
-    if env::var("UPDATE_REFERENCES").is_ok() {
-        std::fs::create_dir_all(ref_page.parent().unwrap()).expect("create ref dir");
-        std::fs::copy(&actual_page, &ref_page).expect("write ref");
-        println!("Updated hello.html reference at {}", ref_page.display());
-    } else {
-        compare_text_asset(&ref_page, &actual_page, "test_marrow")
-            .expect("extra/hello.html content mismatch");
-    }
+    compare_or_update_text_asset(
+        &PathBuf::from("ref/cases/marrow/extra/hello.html"),
+        &actual_page,
+        "test_marrow",
+    );
 
     // The marrow is skipped for the combined PDF target: the build still
     // succeeds and no extra PDF appears.
-    let pdf_output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--pdf",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile --pdf");
+    let pdf_output = built.recompile(&["--pdf"]);
     assert!(
         pdf_output.status.success(),
         "pdf compile failed: {}",
         String::from_utf8_lossy(&pdf_output.stderr)
     );
-    let pdfs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("pdf"))
+    let pdfs: Vec<PathBuf> = std::fs::read_dir(built.path("pdf"))
         .expect("read build/pdf")
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "pdf"))
         .collect();
     assert_eq!(pdfs.len(), 1, "expected exactly one PDF, got {pdfs:?}");
+}
 
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
+/// `rheo-metadata(handle)` and `rheo-metadata-all()` are both reachable from
+/// marrow scope — the synthesized bundle root where `.marrow.typ` is inlined,
+/// outside every `#document` block. The fixture calls both while building a
+/// `meta.txt` asset, which this content-compares.
+///
+/// Both calls are wrapped in `#context`, which every `query()`-backed helper
+/// requires, and the fixture uses `repr(m.title)` rather than `str(m.title)`:
+/// `document.title` is content, and Typst's `str()` rejects content outright.
+#[test]
+fn test_marrow_metadata() {
+    let built = CompiledFixture::compile("cases/marrow_metadata", "marrow_metadata", &["--html"])
+        .expect_success();
+
+    let actual_asset = built.path("html/meta.txt");
+    assert!(actual_asset.exists(), "meta.txt not generated");
+
+    compare_or_update_text_asset(
+        &PathBuf::from("ref/cases/marrow_metadata/meta.txt"),
+        &actual_asset,
+        "test_marrow_metadata",
+    );
 }
 
 /// A page minted at the bundle root via `rheo-document()` must get the same
@@ -2000,59 +1773,17 @@ fn test_marrow() {
 /// `state("rheo-handle")` set to its own handle (not the last spine page's),
 /// and the footnote counter reset to 0 for per-page formats. Bespoke rather
 /// than `#[test_case]` because it asserts on substrings of the rendered HTML,
-/// which the generic snapshot-diff runner does not do. See rheo bead
-/// rheo-rheo-document-bzo.
+/// which the generic snapshot-diff runner does not do.
 #[test]
 fn test_marrow_page_init() {
-    let test_store = PathBuf::from("store").join("marrow_page_init");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(&PathBuf::from("cases/marrow_page_init"), &test_store)
-        .expect("copy fixture");
+    let built = CompiledFixture::compile("cases/marrow_page_init", "marrow_page_init", &["--html"])
+        .expect_success();
 
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
     assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let actual_page = build_dir.join("html/extra/x.html");
-    assert!(
-        actual_page.exists(),
+        built.path("html/extra/x.html").exists(),
         "rheo-document() did not emit extra/x.html"
     );
-    let page_html = std::fs::read_to_string(&actual_page).expect("read extra/x.html");
+    let page_html = built.read("html/extra/x.html");
 
     // state("rheo-handle") must read this page's own handle, not index's.
     assert!(
@@ -2075,74 +1806,24 @@ fn test_marrow_page_init() {
         Some("1"),
         "marrow page footnote was not reset to 1:\n{page_html}"
     );
-
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
 }
 
 /// A marrow-contributed page stays in the EPUB container (manifest + physical
 /// XHTML file) but must not enter the reading order (package.opf spine) or the
 /// nav.xhtml table of contents, since it is not a vertebra. Bespoke rather than
-/// `#[test_case]` because it opens the EPUB zip directly. See rheo bead
-/// rheo-yus.
+/// `#[test_case]` because it opens the EPUB zip directly.
 #[test]
 fn test_marrow_excluded_from_epub_reading_order() {
     use rheo_tests::helpers::comparison::{extract_epub_metadata, extract_epub_xhtml};
 
-    let test_store = PathBuf::from("store").join("marrow_epub_reading_order");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(
-        &PathBuf::from("cases/marrow_epub_reading_order"),
-        &test_store,
+    let built = CompiledFixture::compile(
+        "cases/marrow_epub_reading_order",
+        "marrow_epub_reading_order",
+        &["--epub"],
     )
-    .expect("copy fixture");
+    .expect_success();
 
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--epub",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
-    assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
-        .expect("read build/epub")
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
-        .collect();
-    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
-    let epub_path = &epubs[0];
+    let epub_path = &sole_epub(&built);
 
     let metadata = extract_epub_metadata(epub_path).expect("extract EPUB metadata");
     assert!(
@@ -2182,76 +1863,27 @@ fn test_marrow_excluded_from_epub_reading_order() {
         !nav_xhtml.contains("href=\"extra/hello.xhtml\""),
         "marrow page got a top-level nav entry:\n{nav_xhtml}"
     );
-
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
 }
 
 /// A marrow-emitted `asset()` must be embedded IN the EPUB container (manifest
 /// item + physical bytes in the zip), not written as a loose file beside the
 /// .epub the way it is for HTML. Bespoke rather than `#[test_case]` because it
-/// opens the EPUB zip and parses package.opf directly. See rheo bead rheo-135.
+/// opens the EPUB zip and parses package.opf directly.
 #[test]
 fn test_marrow_asset_embedded_in_epub() {
     use rheo_epub::package::Package;
     use std::io::Read;
 
-    let test_store = PathBuf::from("store").join("marrow_epub_asset");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(&PathBuf::from("cases/marrow_epub_asset"), &test_store)
-        .expect("copy fixture");
-
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--epub",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
-    assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let built =
+        CompiledFixture::compile("cases/marrow_epub_asset", "marrow_epub_asset", &["--epub"])
+            .expect_success();
 
     assert!(
-        !build_dir.join("epub/extra/hello.txt").exists(),
+        !built.path("epub/extra/hello.txt").exists(),
         "marrow asset was written as a loose file next to the EPUB; it should be embedded in the container instead"
     );
 
-    let epubs: Vec<PathBuf> = std::fs::read_dir(build_dir.join("epub"))
-        .expect("read build/epub")
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
-        .collect();
-    assert_eq!(epubs.len(), 1, "expected exactly one EPUB, got {epubs:?}");
-    let epub_path = &epubs[0];
+    let epub_path = &sole_epub(&built);
 
     let file = std::fs::File::open(epub_path).expect("open epub");
     let mut archive = zip::ZipArchive::new(file).expect("read epub archive");
@@ -2308,98 +1940,6 @@ fn test_marrow_asset_embedded_in_epub() {
             .any(|itemref| itemref.idref == asset_item.id),
         "marrow asset entered the EPUB reading order"
     );
-
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
-}
-
-/// A marrow-contributed page is excluded from the Atom feed by default (it
-/// has no source vertebra, so no `rheo-feed-title`/`rheo-feed-updated` to
-/// read), with an explicit `[[html.feed_include]]` rheo.toml opt-in to bring
-/// one back with a title. Bespoke rather than `#[test_case]` because it
-/// asserts entry counts/titles on feed.xml, not a snapshot diff. See rheo bead
-/// rheo-feed-contributed-2i3.
-#[test]
-fn test_marrow_feed_exclusion_and_opt_in() {
-    fn compile_feed(case_name: &str) -> String {
-        let test_store = PathBuf::from("store").join(case_name);
-        if test_store.exists() {
-            std::fs::remove_dir_all(&test_store).expect("clean store");
-        }
-        std::fs::create_dir_all(&test_store).expect("create store");
-        copy_project_to_test_store(&PathBuf::from("cases").join(case_name), &test_store)
-            .expect("copy fixture");
-
-        // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-        let store_toml = test_store.join("rheo.toml");
-        let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-        let patched = content.replace(
-            &format!(
-                "version = \"{}\"",
-                content
-                    .lines()
-                    .find_map(|l| l
-                        .strip_prefix("version = \"")
-                        .and_then(|s| s.strip_suffix('"')))
-                    .unwrap_or("")
-            ),
-            &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-        );
-        std::fs::write(&store_toml, patched).expect("patch version");
-
-        let build_dir = test_store.join("build");
-        let output = rheo_cli_command()
-            .args([
-                "compile",
-                test_store.to_str().unwrap(),
-                "--html",
-                "--build-dir",
-                build_dir.to_str().unwrap(),
-            ])
-            .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-            .output()
-            .expect("run rheo compile");
-        assert!(
-            output.status.success(),
-            "compile failed for {case_name}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        let feed = std::fs::read_to_string(build_dir.join("html/feed.xml"))
-            .unwrap_or_else(|e| panic!("read feed.xml for {case_name}: {e}"));
-
-        if test_store.exists() {
-            std::fs::remove_dir_all(&test_store).ok();
-        }
-        feed
-    }
-
-    let excluded_feed = compile_feed("marrow_feed_default_exclude");
-    assert_eq!(
-        excluded_feed.matches("<entry>").count(),
-        1,
-        "expected only the index entry, feed:\n{excluded_feed}"
-    );
-    assert!(
-        !excluded_feed.contains("extra/hello.html"),
-        "marrow-contributed page leaked into the feed:\n{excluded_feed}"
-    );
-
-    let opt_in_feed = compile_feed("marrow_feed_include_opt_in");
-    assert_eq!(
-        opt_in_feed.matches("<entry>").count(),
-        2,
-        "expected index + opted-in marrow entry, feed:\n{opt_in_feed}"
-    );
-    assert!(
-        opt_in_feed.contains("<title>Hello Extra</title>"),
-        "opted-in marrow entry missing its configured title, feed:\n{opt_in_feed}"
-    );
-    assert!(
-        opt_in_feed.contains("extra/hello.html"),
-        "opted-in marrow entry missing its href, feed:\n{opt_in_feed}"
-    );
 }
 
 /// `--emit-bundle-source` writes the synthesized Typst bundle main to
@@ -2410,75 +1950,26 @@ fn test_marrow_feed_exclusion_and_opt_in() {
 /// bead rheo-4n3.
 #[test]
 fn test_emit_bundle_source_flag() {
-    let test_store = PathBuf::from("store").join("emit_bundle_source");
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).expect("clean store");
-    }
-    std::fs::create_dir_all(&test_store).expect("create store");
-    copy_project_to_test_store(&PathBuf::from("cases/emit_bundle_source"), &test_store)
-        .expect("copy fixture");
-
-    // Patch rheo.toml version to the current crate version (mirrors run_test_case).
-    let store_toml = test_store.join("rheo.toml");
-    let content = std::fs::read_to_string(&store_toml).expect("read rheo.toml");
-    let patched = content.replace(
-        &format!(
-            "version = \"{}\"",
-            content
-                .lines()
-                .find_map(|l| l
-                    .strip_prefix("version = \"")
-                    .and_then(|s| s.strip_suffix('"')))
-                .unwrap_or("")
-        ),
-        &format!("version = \"{}\"", env!("CARGO_PKG_VERSION")),
-    );
-    std::fs::write(&store_toml, patched).expect("patch version");
-
-    let build_dir = test_store.join("build");
-    let debug_path = build_dir.join("html/.rheo-bundle.typ");
-    let index_path = build_dir.join("html/index.html");
-
     // Step 1: no flag — no debug artifact, capture baseline output.
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
-    assert!(
-        output.status.success(),
-        "compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let built = CompiledFixture::compile(
+        "cases/emit_bundle_source",
+        "emit_bundle_source",
+        &["--html"],
+    )
+    .expect_success();
+    let debug_path = built.path("html/.rheo-bundle.typ");
     assert!(
         !debug_path.exists(),
         "bundle debug source written without --emit-bundle-source"
     );
-    let baseline_index = std::fs::read_to_string(&index_path).expect("read baseline index.html");
+    let baseline_index = built.read("html/index.html");
 
     // Step 2: with flag — debug artifact appears, output unchanged.
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            test_store.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-            "--emit-bundle-source",
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile --emit-bundle-source");
+    let flagged = built.recompile(&["--html", "--emit-bundle-source"]);
     assert!(
-        output.status.success(),
+        flagged.status.success(),
         "compile --emit-bundle-source failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&flagged.stderr)
     );
 
     let bundle_source = std::fs::read_to_string(&debug_path).expect("read .rheo-bundle.typ");
@@ -2491,15 +1982,11 @@ fn test_emit_bundle_source_flag() {
         "bundle debug source missing inlined marrow body:\n{bundle_source}"
     );
 
-    let flagged_index = std::fs::read_to_string(&index_path).expect("read flagged index.html");
     assert_eq!(
-        baseline_index, flagged_index,
+        baseline_index,
+        built.read("html/index.html"),
         "--emit-bundle-source changed compiled output"
     );
-
-    if test_store.exists() {
-        std::fs::remove_dir_all(&test_store).ok();
-    }
 }
 
 /// Marrow is read only from the top level of the content directory. A
@@ -2508,44 +1995,19 @@ fn test_emit_bundle_source_flag() {
 /// that silently did nothing, so rheo warns and names the file.
 #[test]
 fn test_nested_marrow_file_warns() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    std::fs::create_dir_all(project_path.join("content/sub")).expect("create content dir");
-    std::fs::write(project_path.join("content/alpha.typ"), "= Alpha\n").expect("write vertebra");
-    std::fs::write(
-        project_path.join("content/sub/.marrow.typ"),
-        "Nested marrow-named file.\n",
-    )
-    .expect("write nested marrow");
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\nformats = [\"html\"]\ncontent_dir = \"content\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("write rheo.toml");
-
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
+    let project = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n")
+        .file("content/alpha.typ", "= Alpha\n")
+        .file("content/sub/.marrow.typ", "Nested marrow-named file.\n");
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
     assert!(
         output.status.success(),
         "compile failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // rheo's tracing subscriber writes to stdout, not stderr.
-    let logs = String::from_utf8_lossy(&output.stdout);
+    let logs = String::from_utf8_lossy(&output.stderr);
     assert!(
         logs.contains("marrow is only read from the top level"),
         "expected a warning about the nested marrow file:\n{logs}"
@@ -2559,132 +2021,6 @@ fn test_nested_marrow_file_warns() {
     assert!(
         build_dir.join("html/sub/_marrow.html").exists(),
         "the nested file should still build as a vertebra"
-    );
-}
-
-/// The Atom feed harvests each entry's body from the first matching content
-/// region, in precedence order: (1) the first `<main>`, else (2) the first
-/// element with class `rheo-feed-content`, else (3) the whole `<body>`. This is
-/// invisible to `verify_html_output` (it only diffs `.html`, never `feed.xml`),
-/// so assert on the generated `feed.xml` directly. See
-/// rheo/crates/core/src/util/html.rs `feed_content_inner_html`.
-#[test]
-fn test_feed_content_region_precedence() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-
-    // Tier 1: a `<main>` wins even though nav/footer chrome is also present.
-    std::fs::write(
-        project_path.join("main_tier.typ"),
-        "#let rheo-feed-title = \"Main Tier\"\n\
-         #let rheo-feed-updated = \"2025-03-01T00:00:00Z\"\n\n\
-         #html.elem(\"nav\", [Chrome MAINNAV])\n\
-         #html.elem(\"main\", [Article body MAINBODY])\n\
-         #html.elem(\"footer\", [Chrome MAINFOOT])\n",
-    )
-    .expect("write main_tier.typ");
-
-    // Tier 2: no `<main>`, so the `.rheo-feed-content` element wins over chrome.
-    std::fs::write(
-        project_path.join("class_tier.typ"),
-        "#let rheo-feed-title = \"Class Tier\"\n\
-         #let rheo-feed-updated = \"2025-03-02T00:00:00Z\"\n\n\
-         #html.elem(\"nav\", [Chrome CLASSNAV])\n\
-         #html.elem(\"div\", attrs: (class: \"rheo-feed-content\"), [Scoped body CLASSBODY])\n\
-         #html.elem(\"footer\", [Chrome CLASSFOOT])\n",
-    )
-    .expect("write class_tier.typ");
-
-    // Tier 3: neither marker, so the whole `<body>` is used.
-    std::fs::write(
-        project_path.join("body_tier.typ"),
-        "#let rheo-feed-title = \"Body Tier\"\n\
-         #let rheo-feed-updated = \"2025-03-03T00:00:00Z\"\n\n\
-         = Body Tier\n\n\
-         Whole body BODYONLY text.\n",
-    )
-    .expect("write body_tier.typ");
-
-    // feed_base_url triggers feed generation. Explicit rheo-feed-updated on every
-    // entry keeps the feed-level <updated> off the non-deterministic mtime path.
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html]\n\
-             feed_base_url = \"https://example.com\"\n",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .expect("write rheo.toml");
-
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
-    assert!(
-        output.status.success(),
-        "Compilation failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let feed =
-        std::fs::read_to_string(build_dir.join("html/feed.xml")).expect("feed.xml not generated");
-
-    // Inner (html-escaped) text of the <content> for the entry with this title.
-    // Marker words are plain ASCII, so they survive escaping and `contains` works.
-    let entry_content = |title: &str| -> String {
-        let marker = format!("<title>{title}</title>");
-        let idx = feed
-            .find(&marker)
-            .unwrap_or_else(|| panic!("no entry titled {title} in feed:\n{feed}"));
-        let rest = &feed[idx..];
-        let cstart = rest.find("<content").expect("content open tag");
-        let inner_start = cstart + rest[cstart..].find('>').expect("content '>'") + 1;
-        let inner_end = inner_start
-            + rest[inner_start..]
-                .find("</content>")
-                .expect("content close");
-        rest[inner_start..inner_end].to_string()
-    };
-
-    // Tier 1: <main> body only; nav/footer chrome excluded.
-    let main_c = entry_content("Main Tier");
-    assert!(
-        main_c.contains("MAINBODY"),
-        "main-tier content missing body: {main_c}"
-    );
-    assert!(
-        !main_c.contains("MAINNAV") && !main_c.contains("MAINFOOT"),
-        "main-tier content should exclude chrome outside <main>: {main_c}"
-    );
-
-    // Tier 2: .rheo-feed-content body only; nav/footer chrome excluded.
-    let class_c = entry_content("Class Tier");
-    assert!(
-        class_c.contains("CLASSBODY"),
-        "class-tier content missing body: {class_c}"
-    );
-    assert!(
-        !class_c.contains("CLASSNAV") && !class_c.contains("CLASSFOOT"),
-        "class-tier content should exclude chrome outside .rheo-feed-content: {class_c}"
-    );
-
-    // Tier 3: whole body.
-    let body_c = entry_content("Body Tier");
-    assert!(
-        body_c.contains("BODYONLY"),
-        "body-tier content missing body: {body_c}"
     );
 }
 
@@ -2741,4 +2077,447 @@ fn test_package_assets_depth_relative_on_nested_pages() {
     );
 
     let _ = std::fs::remove_dir_all(&build_dir);
+}
+
+/// `content/.marrow.typ` mints `transcluded.xml` containing four
+/// `<rheo-content page="..." select="..." as="escaped|raw"/>` placeholders
+/// against two compiled pages:
+///
+/// - `wrapped.html` wraps its article in `<main>`, with distinct chrome text
+///   (`WRAPPEDCHROME`) in a `<nav>`/`<footer>` outside it, so scoping to
+///   `<main>` must exclude the chrome.
+/// - `plain.html` has neither a `<main>` nor a `.rheo-content` element,
+///   so its content region falls through to the whole `<body>` (which does
+///   include a copy of the `WRAPPEDCHROME` text, as ordinary body prose this
+///   time, proving the two pages' entries are exclusive: chrome text should
+///   appear ONLY in the `plain.html`-sourced entry).
+///
+/// The reference encodes the substituted output, so a regression that left a
+/// placeholder verbatim in the asset would fail here. Regenerate it with
+/// `UPDATE_REFERENCES=1`.
+#[test]
+fn test_transclude_content() {
+    let built = CompiledFixture::compile(
+        "cases/transclude_content",
+        "transclude_content",
+        &["--html"],
+    )
+    .expect_success();
+
+    let actual_asset = built.path("html/transcluded.xml");
+    assert!(actual_asset.exists(), "transcluded.xml not generated");
+
+    compare_or_update_text_asset(
+        &PathBuf::from("ref/cases/transclude_content/transcluded.xml"),
+        &actual_asset,
+        "test_transclude_content",
+    );
+}
+
+/// Error path for `<rheo-content>` transclusion: a placeholder naming a `page`
+/// that has no matching compiled output must be a HARD compile error naming
+/// the missing page, not a silently-emitted blank substitution.
+#[test]
+fn test_transclude_content_missing_page_error() {
+    let project = TempProject::new(&["html"])
+        .file("index.typ", "= Index\n\nContent.\n")
+        // References a page that will never exist in this project's output.
+        .file(
+            ".marrow.typ",
+            "#asset(\"bad.xml\", \"<rheo-content page=\\\"nope.html\\\"/>\")\n",
+        );
+    let output = project.compile(&["--html"]);
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail when a <rheo-content> placeholder names \
+         an unresolvable page, but it succeeded:\n{combined}"
+    );
+    assert!(
+        combined.contains("nope.html"),
+        "Expected error output to name the missing page 'nope.html', got:\n{combined}"
+    );
+}
+
+/// `.rheo/` is the reserved bundle-output prefix for control assets that rheo
+/// consumes internally and NEVER writes to the actual build output.
+/// `cases/head_control` mints a
+/// `.rheo/head.html` control asset alongside an ordinary `extra/hello.txt`
+/// asset via `content/.marrow.typ`. This asserts on the OUTPUT TREE directly
+/// (not just page contents, which `run_test_case`'s snapshot diff already
+/// covers) because a stray `.rheo/head.html` left on disk is exactly the kind
+/// of regression a content-only diff can't catch: the reserved prefix must be
+/// stripped from the build output while ordinary assets are unaffected.
+///
+/// HTML only: `cases/head_control` declares `formats = ["html"]`, and a
+/// second EPUB-enabled fixture would be unrelated scaffolding for one absence
+/// check.
+#[test]
+fn test_head_control_excludes_reserved_prefix() {
+    let built = CompiledFixture::compile("cases/head_control", "head_control_tree", &["--html"])
+        .expect_success();
+
+    // The reserved control-asset prefix must never appear in the build output,
+    // neither as a directory nor as the `head.html` file inside it.
+    assert!(
+        !built.path("html/.rheo").exists(),
+        "build/html/.rheo/ should not exist, but it does: {} is a control-asset \
+         prefix that rheo must consume internally, never write to output",
+        built.path("html/.rheo").display()
+    );
+    assert!(
+        !built.path("html/.rheo/head.html").exists(),
+        "build/html/.rheo/head.html should not exist on disk"
+    );
+
+    // Ordinary assets alongside the control asset are unaffected.
+    assert!(
+        built.path("html/extra/hello.txt").exists(),
+        "build/html/extra/hello.txt should exist (ordinary asset, unrelated to \
+         the reserved .rheo/ prefix)"
+    );
+    assert_eq!(
+        built.read("html/extra/hello.txt"),
+        "hi",
+        "extra/hello.txt should contain its minted content verbatim"
+    );
+}
+
+/// An UNRECOGNISED control asset under `.rheo/` (i.e. one rheo doesn't know
+/// how to consume, unlike `.rheo/head.html`) must still be excluded from the
+/// build output, and the compile must still succeed rather than hard-error:
+/// rheo warns instead, so a newer package against an older rheo degrades
+/// gracefully. Built inline rather than as a checked-in fixture, since this is
+/// a single arbitrary asset name.
+#[test]
+fn test_head_control_unrecognized_asset_excluded_and_warns() {
+    let project = TempProject::new(&["html"])
+        .file("index.typ", "= Index\n\nContent.\n")
+        // An unrecognised control-asset name under the reserved `.rheo/` prefix.
+        .file(
+            ".marrow.typ",
+            "#asset(\".rheo/future-thing.json\", \"{\\\"arbitrary\\\": true}\")\n",
+        );
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
+
+    // An unrecognised control asset must not hard-fail the build.
+    assert!(
+        output.status.success(),
+        "compile should succeed even for an unrecognized .rheo/* control asset: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        !build_dir.join("html/.rheo/future-thing.json").exists(),
+        "build/html/.rheo/future-thing.json should not exist on disk, even for \
+         an unrecognized control asset name"
+    );
+
+    // A tracing `WARN` line prints that short tag rather than the spelled-out
+    // "warning" of the codespan-reporting diagnostics `test_warning_formatting`
+    // checks, so this asserts on the message content instead.
+    let logs = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        logs.contains("WARN") && logs.contains("unrecognized control asset"),
+        "Expected a warning about the unrecognized .rheo/future-thing.json \
+         control asset, got:\n{logs}"
+    );
+}
+
+/// A vertebra reads another vertebra's metadata via
+/// `(rheo-context().metadata-of)("chapters:b")`, and gets that vertebra's real
+/// resolved title rather than its own or a path-derived guess.
+#[test]
+fn test_metadata_of_cross_vertebra_query() {
+    let built = CompiledFixture::compile(
+        "cases/metadata_cross_vertebra_query",
+        "metadata_cross_vertebra_query",
+        &["--html"],
+    )
+    .expect_success();
+
+    let a_html = built.read("html/a.html");
+    assert!(
+        a_html.contains("B Title"),
+        "expected a.html to contain chapters:b's title (\"B Title\") read via \
+         metadata-of, got:\n{a_html}"
+    );
+}
+
+/// A vertebra with no `#set document(...)` at all falls back to its
+/// path-derived title, with no leakage from a sibling's, and `metadata-of`
+/// returns an empty dict for it — mirroring spine-flat's own empty-dict
+/// convention.
+///
+/// The assertions live inline in the fixture's `check.typ` (assert-only, so it
+/// renders nothing), which is why this test only checks that the build
+/// succeeded: a failed assert panics the Typst compile.
+#[test]
+fn test_metadata_no_document_no_leakage() {
+    let built = CompiledFixture::compile(
+        "cases/metadata_no_document_no_leakage",
+        "metadata_no_document_no_leakage",
+        &["--html"],
+    );
+    assert!(
+        built.output().status.success(),
+        "compile failed (check.typ's inline asserts panic Typst compilation on failure): {}",
+        built.stderr()
+    );
+}
+
+/// A combined `--pdf` build (the default `SingleCombined` layout) calling
+/// `metadata-of` for its own handle must not error. Beacons are emitted only
+/// for `OnePerVertebra` layouts, since under one shared `#document` a beacon
+/// would report the preceding vertebra's `set document(...)` state, so
+/// `metadata-of` returns an empty dict here instead.
+///
+/// The empty-dict gating itself is unit-tested in `../rheo/crates/core`; this
+/// case's job is only to prove the combined-PDF build does not fall over.
+#[test]
+fn test_metadata_of_combined_pdf_no_crash() {
+    let built = CompiledFixture::compile(
+        "cases/metadata_combined_pdf_metadata_of",
+        "metadata_combined_pdf_metadata_of",
+        &["--pdf"],
+    )
+    .expect_success();
+
+    let pdf_files: Vec<_> = std::fs::read_dir(built.path("pdf"))
+        .expect("read build/pdf dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "pdf"))
+        .collect();
+    assert!(
+        !pdf_files.is_empty(),
+        "expected a combined PDF to be written to build/pdf/"
+    );
+}
+
+/// `cases/metadata_two_pass_bounded_title/bounded.typ` sets its title inside
+/// a bounded `#{ }` code block — correct for its own compiled `<title>`
+/// (unscoped `DocumentInfo`), but invisible to the ordinary single-pass
+/// metadata beacon's `#context` read (`docs/limitations.md`,
+/// `cases/metadata_show_and_code_block/`). `--metadata-two-pass` opts into a
+/// gated second compile pass that resolves it from Rust's already-correct
+/// `DocumentInfo` instead. Without the flag, `index.typ`'s `@bounded` anchor
+/// and `metadata-of("bounded").title` must still show the path-derived
+/// fallback ("Bounded"); with it, both must show the real "Two Pass Title".
+#[test]
+fn test_metadata_two_pass_resolves_bounded_code_block_title() {
+    let built = CompiledFixture::compile(
+        "cases/metadata_two_pass_bounded_title",
+        "metadata_two_pass_bounded_title",
+        &["--html", "--metadata-two-pass"],
+    )
+    .expect_success();
+
+    let index_html = built.read("html/index.html");
+    assert!(
+        index_html.contains("Two Pass Title"),
+        "expected index.html to show bounded.typ's real title (\"Two Pass \
+         Title\"), resolved via --metadata-two-pass through both the \
+         @bounded handle anchor and metadata-of, got:\n{index_html}"
+    );
+    assert!(
+        !index_html.contains(">Bounded<"),
+        "expected the @bounded handle anchor to show the real title, not \
+         the path-derived fallback (\"Bounded\"), got:\n{index_html}"
+    );
+}
+
+/// EPUB's `<dc:creator>` comes from Typst's own `#set document(author: ...)`,
+/// read off the resolved `DocumentInfo` — not from an HTML `<meta
+/// name="author">` scrape, and not from the removed `rheo-author` variable.
+/// The fixture sets only the Typst document author.
+///
+/// Bespoke rather than `#[test_case]` because it opens the EPUB zip and reads
+/// `package.opf` for a field `EpubMetadata` does not model.
+#[test]
+fn test_epub_author_from_typst_document_author() {
+    use rheo_tests::helpers::comparison::extract_epub_creator;
+
+    let built = CompiledFixture::compile(
+        "cases/epub_author_metadata",
+        "epub_author_metadata",
+        &["--epub"],
+    )
+    .expect_success();
+
+    let creator = extract_epub_creator(&sole_epub(&built)).expect("extract EPUB dc:creator");
+    assert_eq!(
+        creator.as_deref(),
+        Some("Ada Lovelace"),
+        "expected dc:creator to reflect Typst's #set document(author:), got {creator:?}"
+    );
+}
+
+/// A vertebra with no author anywhere (no `#set document(author:)`, no
+/// `rheo-author`) must still build successfully — a missing author is never
+/// a hard error, only ever an absent/empty `dc:creator`. Bespoke for the same
+/// reason as `test_epub_author_from_typst_document_author` above, and kept as
+/// its own fixture/test since author extraction only ever looks at the
+/// *first* vertebra's output, so it cannot share a fixture with the
+/// has-a-Typst-author case above.
+#[test]
+fn test_epub_author_absent_build_succeeds() {
+    let built = CompiledFixture::compile(
+        "cases/epub_author_metadata_absent",
+        "epub_author_metadata_absent",
+        &["--epub"],
+    );
+    assert!(
+        built.output().status.success(),
+        "expected EPUB build with no author at all to succeed, but it failed: {}",
+        built.stderr()
+    );
+}
+
+/// `--font-dir` is `ArgAction::Append` and, per `resolve_font_dirs`, is added
+/// on top of whatever the autoscan/config branch already produced. This project
+/// has no `font_dirs` in rheo.toml, so `fonts/` autoscans and two repeated
+/// flags bring the total to 3.
+///
+/// No real font file is needed: `resolve_font_dirs` only checks that a
+/// directory exists, and the merged count is observable from the CLI's own
+/// `loading fonts from N additional directories` line — so this asserts
+/// resolution rather than shipping a binary font into the repo.
+/// `cases/font_dirs_disables_autoscan` pins the config side.
+#[test]
+fn test_font_dir_cli_flag_appends_and_repeats() {
+    // Not a TempProject: this needs sibling directories BESIDE the project root
+    // to pass as --font-dir, and passes extra flags TempProject::compile does not.
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path().join("project");
+    let fonts_dir = project_path.join("fonts"); // autoscan candidate
+    let extra_a = dir.path().join("extra_fonts_a");
+    let extra_b = dir.path().join("extra_fonts_b");
+    std::fs::create_dir_all(&fonts_dir).expect("Failed to create fonts dir");
+    std::fs::create_dir_all(&extra_a).expect("Failed to create extra_a dir");
+    std::fs::create_dir_all(&extra_b).expect("Failed to create extra_b dir");
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            manifest_version::CURRENT
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+    std::fs::write(
+        project_path.join("main.typ"),
+        "= Hello\n\n--font-dir probe.\n",
+    )
+    .expect("Failed to write main.typ");
+
+    let build_dir = dir.path().join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+            "--html",
+            "--font-dir",
+            extra_a.to_str().unwrap(),
+            "--font-dir",
+            extra_b.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        output.status.success(),
+        "Compilation with --font-dir failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("loading fonts from 3 additional directories"),
+        "expected autoscanned fonts/ + 2 repeated --font-dir flags = 3 dirs, got:\n{combined}"
+    );
+    assert!(
+        combined.contains(fonts_dir.to_str().unwrap()),
+        "autoscanned fonts/ dir should still be listed:\n{combined}"
+    );
+    assert!(
+        combined.contains(extra_a.to_str().unwrap())
+            && combined.contains(extra_b.to_str().unwrap()),
+        "both repeated --font-dir values should be listed:\n{combined}"
+    );
+}
+
+/// `--open` needs no end-to-end test of its own, for two reasons pinned here:
+///
+/// 1. The flag only exists on `watch` -- `build_compile_command` in
+///    ../rheo/crates/cli/src/lib.rs registers no "open" Arg at all, only
+///    `build_watch_command` does. `compile --open` is a clap parse error
+///    (asserted below), so the doc audit's premise of testing it via
+///    `compile` doesn't even apply.
+/// 2. On `watch`, `--open` is already exercised end-to-end by every
+///    `DevServer`-based test: `src/helpers/devserver.rs`'s `DevServer::start`
+///    unconditionally passes `.arg("--open")` to every `rheo watch` it
+///    spawns (see tests/watch.rs's `dev_server_serves_and_rebuilds_on_change`),
+///    and starting the HTML dev server at all only happens through the
+///    `--open` code path (`run_watch`'s `if open { ... plugin.open() ... }`).
+///    A failed best-effort browser-open (no GUI in CI) is caught and
+///    warned, never propagated (../rheo/crates/html/src/lib.rs), so that
+///    path is already headless-safe. A dedicated `--open` test would just
+///    re-spawn another slow watch subprocess to duplicate coverage that
+///    already exists.
+///
+/// So this is a deliberate, documented non-duplication -- the only actual
+/// gap was the compile/watch split itself, which this test pins.
+#[test]
+fn test_open_flag_only_exists_on_watch_not_compile() {
+    // Not a TempProject: this asserts on a clap parse error and never compiles.
+    let dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let project_path = dir.path().join("project");
+    std::fs::create_dir_all(&project_path).expect("Failed to create project dir");
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            manifest_version::CURRENT
+        ),
+    )
+    .expect("Failed to write rheo.toml");
+    std::fs::write(project_path.join("main.typ"), "= Hello\n").expect("Failed to write main.typ");
+
+    let build_dir = dir.path().join("build");
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+            "--html",
+            "--open",
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        !output.status.success(),
+        "expected `compile --open` to be rejected by clap (the flag is watch-only), but it succeeded"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--open"),
+        "expected clap's error to name the unrecognized --open flag, got:\n{stderr}"
+    );
 }

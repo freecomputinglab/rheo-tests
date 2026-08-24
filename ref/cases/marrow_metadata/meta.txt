@@ -1,0 +1,8 @@
+date_auto: title=[Date Auto] date=-
+date_literal: title=[Date Literal] date=2025-01-15
+date_none: title=[Date None] date=-
+date_templated: title=[Templated Date] date=2024-11-05
+first: title=[First] date=2025-03-10
+second: title=[Second] date=-
+third: title=[Third] date=-
+single:second: title=[Second] date=-

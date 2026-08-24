@@ -224,9 +224,10 @@ fn compare_html_content(reference: &Path, actual: &Path, test_name: &str) -> Res
 /// committed reference, emitting a line diff on mismatch.
 ///
 /// Unlike [`compare_html_content`] this performs no tag/attribute normalization —
-/// the asset must be deterministic. Feed fixtures achieve that by setting an
-/// explicit `rheo-feed-updated` on every entry, so `feed.xml` never falls back
-/// to the non-deterministic output-file mtime. Reusable for other asset kinds.
+/// the asset must be deterministic. `cases/marrow_atom_feed` achieves that by
+/// giving every vertebra an explicit `#set document(date: ...)`, so `feed.xml`
+/// never falls back to the non-deterministic output-file mtime. Reusable for
+/// other asset kinds.
 pub fn compare_text_asset(reference: &Path, actual: &Path, label: &str) -> Result<(), String> {
     let ref_content = fs::read_to_string(reference)
         .map_err(|e| format!("Failed to read reference {}: {}", reference.display(), e))?;
@@ -243,6 +244,20 @@ pub fn compare_text_asset(reference: &Path, actual: &Path, label: &str) -> Resul
             actual.display(),
             diff,
         ))
+    }
+}
+
+/// [`compare_text_asset`], or refresh `reference` from `actual` when
+/// `UPDATE_REFERENCES` is set — the shape a bespoke single-asset test needs,
+/// mirroring what `reference::update_*_references` does for whole trees.
+pub fn compare_or_update_text_asset(reference: &Path, actual: &Path, label: &str) {
+    if std::env::var("UPDATE_REFERENCES").is_ok() {
+        fs::create_dir_all(reference.parent().expect("reference path has a parent"))
+            .expect("create reference directory");
+        fs::copy(actual, reference).expect("write reference");
+        println!("Updated {label} reference at {}", reference.display());
+    } else {
+        compare_text_asset(reference, actual, label).expect("asset content mismatch");
     }
 }
 
@@ -603,6 +618,46 @@ pub fn extract_epub_metadata(epub_path: &Path) -> Result<EpubMetadata, String> {
         spine_files,
         has_nav,
     })
+}
+
+/// Extract the `<dc:creator>` text from an EPUB's `package.opf`, if present.
+///
+/// Deliberately NOT folded into `EpubMetadata`/`Package` — this is a single
+/// scoped lookup for a field those don't model yet, done via a plain string
+/// search over the raw OPF rather than extending the full XML struct
+/// machinery. Returns `Ok(None)` if the element is absent.
+pub fn extract_epub_creator(epub_path: &Path) -> Result<Option<String>, String> {
+    use std::io::Read;
+    use zip::ZipArchive;
+
+    let file = fs::File::open(epub_path).map_err(|e| format!("Failed to open EPUB file: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Failed to read EPUB archive: {}", e))?;
+
+    let opf_contents = {
+        let mut opf_file = archive
+            .by_name("EPUB/package.opf")
+            .map_err(|e| format!("Failed to find package.opf: {}", e))?;
+        let mut contents = String::new();
+        opf_file
+            .read_to_string(&mut contents)
+            .map_err(|e| format!("Failed to read package.opf: {}", e))?;
+        contents
+    };
+
+    let Some(open_start) = opf_contents.find("<dc:creator") else {
+        return Ok(None);
+    };
+    let Some(open_end_rel) = opf_contents[open_start..].find('>') else {
+        return Ok(None);
+    };
+    let text_start = open_start + open_end_rel + 1;
+    let Some(close_rel) = opf_contents[text_start..].find("</dc:creator>") else {
+        return Ok(None);
+    };
+    let text_end = text_start + close_rel;
+
+    Ok(Some(opf_contents[text_start..text_end].to_string()))
 }
 
 /// Extract XHTML content files from an EPUB archive

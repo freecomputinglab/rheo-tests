@@ -22,6 +22,11 @@ pub struct TestMetadata {
     pub expect: Option<String>,
     /// Required error patterns to check in stderr (for error cases)
     pub error_patterns: Vec<String>,
+    /// Required warning patterns to check (stdout+stderr) on a successful build
+    pub warn_patterns: Vec<String>,
+    /// Keep this case's `rheo.toml` `version` verbatim instead of the harness's
+    /// usual patch to the current crate version (to exercise a stale version)
+    pub keep_version: bool,
 }
 
 impl Default for TestMetadata {
@@ -31,8 +36,29 @@ impl Default for TestMetadata {
             description: None,
             expect: None,
             error_patterns: vec![],
+            warn_patterns: vec![],
+            keep_version: false,
         }
     }
+}
+
+/// Splits a comma-separated list, dropping empty entries:
+/// `html, pdf` -> `["html", "pdf"]`.
+fn parse_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// [`parse_list`], additionally stripping the surrounding quotes each entry
+/// carries: `"a", "b c"` -> `["a", "b c"]`.
+fn parse_quoted_list(s: &str) -> Vec<String> {
+    parse_list(s)
+        .iter()
+        .map(|p| p.trim_matches('"').to_string())
+        .collect()
 }
 
 /// Checks if a line contains the @rheo:test marker
@@ -41,76 +67,44 @@ pub fn is_test_marker(line: &str) -> bool {
     trimmed.starts_with("//") && trimmed.contains("@rheo:test")
 }
 
-/// Parses test metadata from .typ file source
+/// Parses test metadata from .typ file source.
 ///
-/// Returns Some(TestMetadata) if the file contains // @rheo:test marker,
-/// otherwise returns None.
+/// Returns `Some(TestMetadata)` if the file carries the `@rheo:test` marker,
+/// otherwise `None` — a `.typ` file with any other marker but not that one is
+/// not a test case at all.
 pub fn parse_test_metadata(source: &str) -> Option<TestMetadata> {
     let mut has_test_marker = false;
     let mut metadata = TestMetadata::default();
 
     for line in source.lines() {
         let trimmed = line.trim();
-
-        // Must start with comment
         if !trimmed.starts_with("//") {
             continue;
         }
-
         let comment = trimmed.trim_start_matches("//").trim();
-
-        // Check for @rheo:test marker
-        if comment == "@rheo:test" {
-            has_test_marker = true;
+        let Some(marker) = comment.strip_prefix("@rheo:") else {
             continue;
-        }
+        };
+        // A bare marker splits to an empty value, which the two valueless
+        // markers below require — so `@rheo:test something` is not the marker.
+        let (name, value) = marker
+            .split_once(char::is_whitespace)
+            .unwrap_or((marker, ""));
+        let value = value.trim();
 
-        // Parse @rheo:formats
-        if let Some(formats_str) = comment.strip_prefix("@rheo:formats") {
-            let formats_str = formats_str.trim();
-            metadata.formats = formats_str
-                .split(',')
-                .map(|f| f.trim().to_string())
-                .filter(|f| !f.is_empty())
-                .collect();
-            continue;
-        }
-
-        // Parse @rheo:description
-        if let Some(desc) = comment.strip_prefix("@rheo:description") {
-            metadata.description = Some(desc.trim().to_string());
-            continue;
-        }
-
-        // Parse @rheo:expect
-        if let Some(expect_str) = comment.strip_prefix("@rheo:expect") {
-            let expect_value = expect_str.trim().to_string();
-            if !expect_value.is_empty() {
-                metadata.expect = Some(expect_value);
-            }
-            continue;
-        }
-
-        // Parse @rheo:error-patterns
-        if let Some(patterns_str) = comment.strip_prefix("@rheo:error-patterns") {
-            // Patterns are comma-separated quoted strings
-            // Example: @rheo:error-patterns "error", "cannot add", "│"
-            let patterns_str = patterns_str.trim();
-            metadata.error_patterns = patterns_str
-                .split(',')
-                .map(|p| p.trim())
-                .filter(|p| !p.is_empty())
-                .map(|p| p.trim_matches('"').to_string()) // Remove quotes
-                .collect();
-            continue;
+        match name {
+            "test" if value.is_empty() => has_test_marker = true,
+            "keep-version" if value.is_empty() => metadata.keep_version = true,
+            "formats" => metadata.formats = parse_list(value),
+            "description" => metadata.description = Some(value.to_string()),
+            "expect" if !value.is_empty() => metadata.expect = Some(value.to_string()),
+            "error-patterns" => metadata.error_patterns = parse_quoted_list(value),
+            "warn-patterns" => metadata.warn_patterns = parse_quoted_list(value),
+            _ => {}
         }
     }
 
-    if has_test_marker {
-        Some(metadata)
-    } else {
-        None
-    }
+    has_test_marker.then_some(metadata)
 }
 
 /// Reads test metadata from a .typ file
@@ -248,5 +242,29 @@ mod tests {
 = Content"#;
         let metadata = parse_test_metadata(source).unwrap();
         assert_eq!(metadata.error_patterns, vec!["pattern one", "pattern two"]);
+    }
+
+    #[test]
+    fn test_parse_test_metadata_with_warn_patterns() {
+        let source = r#"// @rheo:test
+// @rheo:warn-patterns "retired", "`merge`"
+= Content"#;
+        let metadata = parse_test_metadata(source).unwrap();
+        assert_eq!(metadata.warn_patterns, vec!["retired", "`merge`"]);
+        assert!(metadata.error_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_parse_test_metadata_with_keep_version() {
+        let source = "// @rheo:test\n// @rheo:keep-version\n= Content";
+        let metadata = parse_test_metadata(source).unwrap();
+        assert!(metadata.keep_version);
+    }
+
+    #[test]
+    fn test_parse_test_metadata_keep_version_defaults_false() {
+        let source = "// @rheo:test\n= Content";
+        let metadata = parse_test_metadata(source).unwrap();
+        assert!(!metadata.keep_version);
     }
 }

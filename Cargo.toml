@@ -37,4 +37,8 @@ html5ever = "0.39"
 markup5ever_rcdom = "0.39"
 serde-xml-rs = "0.8.2"
 
+# Process-group teardown for spawned `rheo watch` subprocesses (tests/watch.rs)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [workspace]

@@ -1,0 +1,5 @@
+version = "0.6.0"
+formats = ["html"]
+
+[html.spine]
+include = ["b.typ", "a.typ", "c.typ"]

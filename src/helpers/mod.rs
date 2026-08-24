@@ -1,7 +1,10 @@
 pub mod cli;
 pub mod comparison;
+pub mod compiled;
+pub mod devserver;
 pub mod fixtures;
 pub mod markers;
+pub mod project;
 pub mod reference;
 pub mod remote;
 pub mod test_store;
