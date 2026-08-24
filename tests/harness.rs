@@ -7,6 +7,7 @@ use rheo_tests::helpers::{
     },
     compiled::{CompiledFixture, TestStore, patch_manifest_version},
     fixtures::TestCase,
+    project::TempProject,
     reference::{update_epub_references, update_html_references, update_pdf_references},
     test_store::copy_project_to_test_store,
 };
@@ -2156,36 +2157,12 @@ fn test_emit_bundle_source_flag() {
 /// that silently did nothing, so rheo warns and names the file.
 #[test]
 fn test_nested_marrow_file_warns() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    std::fs::create_dir_all(project_path.join("content/sub")).expect("create content dir");
-    std::fs::write(project_path.join("content/alpha.typ"), "= Alpha\n").expect("write vertebra");
-    std::fs::write(
-        project_path.join("content/sub/.marrow.typ"),
-        "Nested marrow-named file.\n",
-    )
-    .expect("write nested marrow");
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\nformats = [\"html\"]\ncontent_dir = \"content\"\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("write rheo.toml");
-
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("run rheo compile");
+    let project = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n")
+        .file("content/alpha.typ", "= Alpha\n")
+        .file("content/sub/.marrow.typ", "Nested marrow-named file.\n");
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
     assert!(
         output.status.success(),
         "compile failed: {}",
@@ -2304,41 +2281,14 @@ fn test_transclude_content() {
 /// the missing page, not a silently-emitted blank substitution.
 #[test]
 fn test_transclude_content_missing_page_error() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
-
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
-
-    std::fs::write(project_path.join("index.typ"), "= Index\n\nContent.\n")
-        .expect("Failed to write index.typ");
-
-    // References a page that will never exist in this project's output.
-    std::fs::write(
-        project_path.join(".marrow.typ"),
-        "#asset(\"bad.xml\", \"<rheo-content page=\\\"nope.html\\\"/>\")\n",
-    )
-    .expect("Failed to write .marrow.typ");
-
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let project = TempProject::new(&["html"])
+        .file("index.typ", "= Index\n\nContent.\n")
+        // References a page that will never exist in this project's output.
+        .file(
+            ".marrow.typ",
+            "#asset(\"bad.xml\", \"<rheo-content page=\\\"nope.html\\\"/>\")\n",
+        );
+    let output = project.compile(&["--html"]);
 
     let combined = format!(
         "{}{}",
@@ -2409,41 +2359,15 @@ fn test_head_control_excludes_reserved_prefix() {
 /// a single arbitrary asset name.
 #[test]
 fn test_head_control_unrecognized_asset_excluded_and_warns() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
-
-    std::fs::write(project_path.join("index.typ"), "= Index\n\nContent.\n")
-        .expect("Failed to write index.typ");
-
-    // An unrecognised control-asset name under the reserved `.rheo/` prefix.
-    std::fs::write(
-        project_path.join(".marrow.typ"),
-        "#asset(\".rheo/future-thing.json\", \"{\\\"arbitrary\\\": true}\")\n",
-    )
-    .expect("Failed to write .marrow.typ");
-
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let project = TempProject::new(&["html"])
+        .file("index.typ", "= Index\n\nContent.\n")
+        // An unrecognised control-asset name under the reserved `.rheo/` prefix.
+        .file(
+            ".marrow.typ",
+            "#asset(\".rheo/future-thing.json\", \"{\\\"arbitrary\\\": true}\")\n",
+        );
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
 
     // An unrecognised control asset must not hard-fail the build.
     assert!(

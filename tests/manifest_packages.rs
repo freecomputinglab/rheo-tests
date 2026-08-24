@@ -1,12 +1,13 @@
 use rheo_core::config::manifest_version;
 use rheo_core::plugins::PackageIndex;
 use rheo_tests::helpers::cli::rheo_cli_command;
+use rheo_tests::helpers::project::FakePackage;
 
 #[test]
 fn detect_manifest_package_assets_reads_tool_rheo_section() {
     let search_root = tempfile::tempdir().unwrap();
-    let pkg_dir = search_root.path().join("testns/testpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(search_root.path(), "@testns/testpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"
@@ -52,8 +53,8 @@ js_scripts = "main.js"
 #[test]
 fn detect_manifest_skips_packages_without_tool_rheo() {
     let search_root = tempfile::tempdir().unwrap();
-    let pkg_dir = search_root.path().join("otherns/pkg/1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(search_root.path(), "@otherns/pkg:1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         "[package]\nname = \"pkg\"\nversion = \"1.0\"\n",
@@ -78,8 +79,11 @@ fn e2e_auto_detected_manifest_package_assets() {
     let project_path = project_dir.path();
 
     // Set up fake package in cache
-    let pkg_dir = cache_dir.path().join("typst/packages/e2ens/e2epkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(
+        &cache_dir.path().join("typst/packages"),
+        "@e2ens/e2epkg:0.1.0",
+    );
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"
@@ -166,8 +170,8 @@ Test document.
 }
 
 fn stage_package_in_data_dir(data_dir: &std::path::Path) {
-    let pkg_dir = data_dir.join("typst/packages/testns/testpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(&data_dir.join("typst/packages"), "@testns/testpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"
@@ -185,6 +189,9 @@ css_stylesheet = "style.css"
     std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
 }
 
+/// Compile `project_path` to HTML with extra environment — an `XDG_DATA_HOME`
+/// or `XDG_CACHE_HOME` redirect, so a staged [`FakePackage`] is found without
+/// touching the real Typst package cache.
 fn run_rheo_compile(
     project_path: &std::path::Path,
     build_dir: &std::path::Path,
@@ -406,8 +413,8 @@ Copy pattern test.
 /// package's own code by package spec, since inlined text resolves against the
 /// project root rather than the package directory.
 fn stage_marrow_package(data_dir: &std::path::Path) {
-    let pkg_dir = data_dir.join("typst/packages/mns/mpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(&data_dir.join("typst/packages"), "@mns/mpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         r#"[package]
@@ -585,8 +592,8 @@ fn package_marrow_respects_auto_detect_opt_out() {
 /// the search root to hand the detector.
 fn stage_package_with_marrow(marrow: Option<&str>) -> tempfile::TempDir {
     let search_root = tempfile::tempdir().unwrap();
-    let pkg_dir = search_root.path().join("mns/mpkg/0.1.0");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
+    let pkg = FakePackage::new(search_root.path(), "@mns/mpkg:0.1.0");
+    let pkg_dir = pkg.root().to_path_buf();
     std::fs::write(
         pkg_dir.join("typst.toml"),
         "[package]\nname = \"mpkg\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n",
@@ -626,16 +633,9 @@ fn detect_package_marrow_skips_packages_without_one() {
 #[test]
 fn detect_package_marrow_collects_every_package_in_import_order() {
     let search_root = tempfile::tempdir().unwrap();
-    for (ns, text) in [("apkg", "#let a = 1\n"), ("bpkg", "#let b = 2\n")] {
-        let pkg_dir = search_root.path().join(format!("mns/{ns}/0.1.0"));
-        std::fs::create_dir_all(&pkg_dir).unwrap();
-        std::fs::write(
-            pkg_dir.join("typst.toml"),
-            format!("[package]\nname = \"{ns}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"),
-        )
-        .unwrap();
-        std::fs::write(pkg_dir.join("lib.typ"), "").unwrap();
-        std::fs::write(pkg_dir.join(".marrow.typ"), text).unwrap();
+    for (name, text) in [("apkg", "#let a = 1\n"), ("bpkg", "#let b = 2\n")] {
+        FakePackage::new(search_root.path(), &format!("@mns/{name}:0.1.0"))
+            .file(".marrow.typ", text);
     }
 
     let imports = vec!["@mns/bpkg:0.1.0".to_string(), "@mns/apkg:0.1.0".to_string()];
@@ -726,15 +726,12 @@ fn e2e_project_and_package_marrow_both_inline() {
 
 /// Stage a package at `mns/<name>/0.1.0` shipping the given marrow text.
 fn stage_named_marrow_package(data_dir: &std::path::Path, name: &str, marrow: &str) {
-    let pkg_dir = data_dir.join(format!("typst/packages/mns/{name}/0.1.0"));
-    std::fs::create_dir_all(&pkg_dir).unwrap();
-    std::fs::write(
-        pkg_dir.join("typst.toml"),
-        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"),
+    FakePackage::new(
+        &data_dir.join("typst/packages"),
+        &format!("@mns/{name}:0.1.0"),
     )
-    .unwrap();
-    std::fs::write(pkg_dir.join("lib.typ"), "#let marker = \"present\"\n").unwrap();
-    std::fs::write(pkg_dir.join(".marrow.typ"), marrow).unwrap();
+    .file("lib.typ", "#let marker = \"present\"\n")
+    .file(".marrow.typ", marrow);
 }
 
 /// Several imported packages may each ship a `.marrow.typ`, and every one is
@@ -925,11 +922,10 @@ fn e2e_empty_package_marrow_is_a_no_op() {
     assert!(build_dir.join("html/main.html").exists());
 }
 
-/// Stage `{ns}/{name}/{version}/typst.toml` with the given body under `search_root`.
+/// Stage a package under `search_root` whose `typst.toml` is exactly `body` —
+/// for a manifest whose own contents are the subject.
 fn stage_manifest(search_root: &std::path::Path, ns: &str, name: &str, version: &str, body: &str) {
-    let pkg_dir = search_root.join(ns).join(name).join(version);
-    std::fs::create_dir_all(&pkg_dir).unwrap();
-    std::fs::write(pkg_dir.join("typst.toml"), body).unwrap();
+    FakePackage::new(search_root, &format!("@{ns}/{name}:{version}")).manifest(body);
 }
 
 #[test]
