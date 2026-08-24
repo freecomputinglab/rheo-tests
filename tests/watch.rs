@@ -1,9 +1,6 @@
-//! Smoke coverage for `rheo watch` / the dev server (rheo-tests-u30). Scoped
-//! to: server starts, serves the initial page, and rebuilds on a source
-//! change — not a full served-vs-compiled byte comparison. That parity check
-//! is `rheo-tests-watch-head-parity-typ`, which depends on the
-//! `helpers::devserver::DevServer` capability exercised here (spawn the dev
-//! server, fetch a page over HTTP, assert on the served HTML).
+//! Coverage for `rheo watch` and its dev server: that the server starts,
+//! serves the initial page, rebuilds on a source change, and serves exactly
+//! what `rheo compile` writes.
 
 use rheo_tests::helpers::{
     cli::rheo_cli_command, devserver::DevServer, fixtures::TestCase,

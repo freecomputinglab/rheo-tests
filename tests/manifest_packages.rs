@@ -450,7 +450,6 @@ entrypoint = "lib.typ"
 
 /// E2e: a package shipping its own `.marrow.typ` mints pages purely because the
 /// project imports it — the project writes no marrow and no rheo.toml entry.
-/// See rheo bead rheo-bundle-pkg-root-i24.
 #[test]
 fn e2e_package_declared_marrow_mints_a_page() {
     let data_dir = tempfile::tempdir().unwrap();

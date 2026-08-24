@@ -1155,7 +1155,7 @@ fn test_asset_multiple_blocks_inject_all() {
 /// (per-format value) and that the removed `sys.inputs.rheo-target` key is gone.
 ///
 /// Companion to the `is-rheo-*` helper coverage; this asserts the raw context
-/// field and the key removal directly. See rheo epic `rheo-tgt-epic-714`.
+/// field and the key removal directly.
 #[test]
 fn test_rheo_context_target_and_no_legacy_key() {
     let dir = tempfile::tempdir().expect("Failed to create temp dir");
@@ -1594,7 +1594,7 @@ fn migrate_converts_vertebrae_to_exclude() {
 /// `rheo migrate` REPORTS (never rewrites) the removed `[html] feed_*`
 /// rheo.toml keys and the removed `rheo-*` `.typ` variable bindings, since
 /// feed configuration does not map one-to-one onto `@rheo/feeds`'s Typst
-/// API. See rheo bead `rheo-migrate-feed-dhe`.
+/// API.
 #[test]
 fn migrate_reports_removed_feed_surface() {
     let test_case = TestCase::new("cases/migrate_feed_removal");
@@ -1824,37 +1824,14 @@ fn test_external_config_flag() {
 }
 
 /// Hand-rolls an Atom feed from `content/.marrow.typ` using only the three
-/// port primitives (`<rheo-content>` transclusion, `rheo-metadata-all()`,
-/// `sys.inputs.rheo-context.spine-flat`) -- no `@rheo` package, so this
-/// fixture must not depend on the Typst package cache. Proves the primitives
-/// are sufficient to replace the deleted Rust feed generator (rheo bead
-/// `rheo-drop-feed-bdo`). See rheo-tests-marrow-feed-g0y.
+/// primitives a marrow can reach — `<rheo-content>` transclusion,
+/// `rheo-metadata-all()`, and `sys.inputs.rheo-context.spine-flat` — proving
+/// they suffice in place of the deleted Rust feed generator. Uses no `@rheo`
+/// package, so the fixture never depends on the Typst package cache.
 ///
-/// Parity deltas against the old Rust-generated feed.xml (its fixture and
-/// reference are deleted, see rheo-tests-drop-feed-cases-jdr; deltas
-/// recorded here since nothing else pins them):
-/// - Entry `<title>` is the PATH-DERIVED spine title ("Post A"/"Post B")
-///   instead of the authored title ("Alpha"/"Beta"). Typst has no
-///   content-to-plain-text primitive (`document.title` is Content, and
-///   `str()` rejects Content -- confirmed in `cases/marrow_metadata`), so a
-///   marrow reads `rheo-context().spine-flat`'s title (always path-derived,
-///   already a plain `str`) rather than trying to flatten the real one. A
-///   future package wanting the authored title as text would need a
-///   `<rheo-content select="...">` against a heading element.
-/// - Feed-level `<title>` is a literal string written in the marrow
-///   (`"Marrow Atom Feed"`) instead of derived from `rheo.toml`'s
-///   `feed_title`/spine title/project name cascade -- that cascade doesn't
-///   exist for this path; publication facts live in Typst now, not
-///   `rheo.toml`.
-/// - `<author>` stays `"Rheo"` (a literal in the marrow now, not a
-///   `feed_author` config default), matching the old default's value even
-///   though it is no longer *derived* the same way.
-/// - Timestamps are byte-identical in format (`+00:00` offset) -- computed
-///   by `rfc3339()` from a real `datetime` set via `#set document(date:
-///   ...)`, not parsed from a removed `rheo-feed-updated` string.
-/// - Entry `<content type="html">` is byte-identical -- sourced via
-///   `<rheo-content page="..."/>` transclusion (the compiled page's `<body>`
-///   inner HTML, escaped) instead of a Rust-side body reader.
+/// `docs/feed-parity.md` records how this feed differs from the one that
+/// generator produced, since its own fixture and reference were deleted with
+/// it.
 #[test]
 fn test_marrow_atom_feed() {
     let built = CompiledFixture::compile("cases/marrow_atom_feed", "marrow_atom_feed", &["--html"])
@@ -1876,9 +1853,8 @@ fn test_marrow_atom_feed() {
 /// without being part of it: it is not a vertebra and must not produce
 /// `.marrow.html`. A bespoke test rather than a `#[test_case]` because this
 /// asserts on a non-HTML asset, on a file that must NOT exist, and on a second
-/// format run — none of which `verify_html_output` can do. See rheo beads
-/// rheo-bundle-root-cc4 (feature) and rheo-bundle-assets-x88 (the asset half).
-/// Regenerate the reference with `UPDATE_REFERENCES=1`.
+/// format run — none of which `verify_html_output` can do. Regenerate the
+/// reference with `UPDATE_REFERENCES=1`.
 #[test]
 fn test_marrow() {
     let built = CompiledFixture::compile("cases/marrow", "marrow", &["--html"]).expect_success();
@@ -1930,19 +1906,14 @@ fn test_marrow() {
     assert_eq!(pdfs.len(), 1, "expected exactly one PDF, got {pdfs:?}");
 }
 
-/// GREEN case for `rheo-marrow-meta-d5v` (../rheo, landed): `rheo-metadata(handle)`
-/// and the new `rheo-metadata-all()` companion are both reachable from MARROW
-/// scope -- the synthesized bundle root where `.marrow.typ` is inlined, outside
-/// every `#document` block. `cases/marrow_metadata/content/.marrow.typ` calls
-/// both forms (wrapped in `#context`, which `query()`-backed helpers require)
-/// while building a `meta.txt` asset. Originally written expecting a hard
-/// compile failure (neither name existed in marrow scope yet); rewritten now
-/// that they do, content-comparing the built asset like `test_marrow_atom_feed`
-/// does. Along the way, found and fixed two real bugs in the original RED
-/// fixture: (1) the marrow calls weren't wrapped in `#context`, and (2) `.title`
-/// was string-concatenated directly, but `document.title` is CONTENT, not a
-/// string, and Typst's `str()` doesn't accept content at all -- `repr(m.title)`
-/// is used instead (see the fixture's own comments for detail).
+/// `rheo-metadata(handle)` and `rheo-metadata-all()` are both reachable from
+/// marrow scope — the synthesized bundle root where `.marrow.typ` is inlined,
+/// outside every `#document` block. The fixture calls both while building a
+/// `meta.txt` asset, which this content-compares.
+///
+/// Both calls are wrapped in `#context`, which every `query()`-backed helper
+/// requires, and the fixture uses `repr(m.title)` rather than `str(m.title)`:
+/// `document.title` is content, and Typst's `str()` rejects content outright.
 #[test]
 fn test_marrow_metadata() {
     let built = CompiledFixture::compile("cases/marrow_metadata", "marrow_metadata", &["--html"])
@@ -1963,8 +1934,7 @@ fn test_marrow_metadata() {
 /// `state("rheo-handle")` set to its own handle (not the last spine page's),
 /// and the footnote counter reset to 0 for per-page formats. Bespoke rather
 /// than `#[test_case]` because it asserts on substrings of the rendered HTML,
-/// which the generic snapshot-diff runner does not do. See rheo bead
-/// rheo-rheo-document-bzo.
+/// which the generic snapshot-diff runner does not do.
 #[test]
 fn test_marrow_page_init() {
     let built = CompiledFixture::compile("cases/marrow_page_init", "marrow_page_init", &["--html"])
@@ -2002,8 +1972,7 @@ fn test_marrow_page_init() {
 /// A marrow-contributed page stays in the EPUB container (manifest + physical
 /// XHTML file) but must not enter the reading order (package.opf spine) or the
 /// nav.xhtml table of contents, since it is not a vertebra. Bespoke rather than
-/// `#[test_case]` because it opens the EPUB zip directly. See rheo bead
-/// rheo-yus.
+/// `#[test_case]` because it opens the EPUB zip directly.
 #[test]
 fn test_marrow_excluded_from_epub_reading_order() {
     use rheo_tests::helpers::comparison::{extract_epub_metadata, extract_epub_xhtml};
@@ -2060,7 +2029,7 @@ fn test_marrow_excluded_from_epub_reading_order() {
 /// A marrow-emitted `asset()` must be embedded IN the EPUB container (manifest
 /// item + physical bytes in the zip), not written as a loose file beside the
 /// .epub the way it is for HTML. Bespoke rather than `#[test_case]` because it
-/// opens the EPUB zip and parses package.opf directly. See rheo bead rheo-135.
+/// opens the EPUB zip and parses package.opf directly.
 #[test]
 fn test_marrow_asset_embedded_in_epub() {
     use rheo_epub::package::Package;
@@ -2295,10 +2264,9 @@ fn test_package_assets_depth_relative_on_nested_pages() {
     let _ = std::fs::remove_dir_all(&build_dir);
 }
 
-/// RED test for the not-yet-implemented `<rheo-content>` transclusion pass
-/// (rheo bead `rheo-transclude-3yw`). `content/.marrow.typ` mints
-/// `transcluded.xml` containing four `<rheo-content page="..." select="..."
-/// as="escaped|raw"/>` placeholders against two compiled pages:
+/// `content/.marrow.typ` mints `transcluded.xml` containing four
+/// `<rheo-content page="..." select="..." as="escaped|raw"/>` placeholders
+/// against two compiled pages:
 ///
 /// - `wrapped.html` wraps its article in `<main>`, with distinct chrome text
 ///   (`WRAPPEDCHROME`) in a `<nav>`/`<footer>` outside it, so scoping to
@@ -2309,14 +2277,9 @@ fn test_package_assets_depth_relative_on_nested_pages() {
 ///   time, proving the two pages' entries are exclusive: chrome text should
 ///   appear ONLY in the `plain.html`-sourced entry).
 ///
-/// Right now rheo does not implement this substitution, so the placeholders
-/// survive verbatim into the built asset and this test fails against a
-/// reference that encodes the CORRECT eventual (post-`rheo-transclude-3yw`)
-/// output. That failure is the point: this is a deliberately RED test in a
-/// TDD pair with `rheo/` — do NOT "fix" it by weakening the reference.
-/// Regenerate the raw (pre-substitution) capture with `UPDATE_REFERENCES=1`
-/// (then re-apply the hand edits describing intended behavior — see the
-/// reference file's construction in the companion bead notes).
+/// The reference encodes the substituted output, so a regression that left a
+/// placeholder verbatim in the asset would fail here. Regenerate it with
+/// `UPDATE_REFERENCES=1`.
 #[test]
 fn test_transclude_content() {
     let built = CompiledFixture::compile(
@@ -2338,10 +2301,7 @@ fn test_transclude_content() {
 
 /// Error path for `<rheo-content>` transclusion: a placeholder naming a `page`
 /// that has no matching compiled output must be a HARD compile error naming
-/// the missing page (rheo-transclude-3yw step 4), not a silently-emitted blank
-/// substitution. Whether this currently passes or fails depends on whether
-/// rheo already errors on an unresolvable marrow-emitted asset on some other
-/// ground; either way, this records the intended future contract.
+/// the missing page, not a silently-emitted blank substitution.
 #[test]
 fn test_transclude_content_missing_page_error() {
     let dir = tempfile::tempdir().expect("Failed to create temp dir");
@@ -2398,8 +2358,8 @@ fn test_transclude_content_missing_page_error() {
 }
 
 /// `.rheo/` is the reserved bundle-output prefix for control assets that rheo
-/// consumes internally and NEVER writes to the actual build output (rheo bead
-/// rheo-head-control-cbr, not yet implemented). `cases/head_control` mints a
+/// consumes internally and NEVER writes to the actual build output.
+/// `cases/head_control` mints a
 /// `.rheo/head.html` control asset alongside an ordinary `extra/hello.txt`
 /// asset via `content/.marrow.typ`. This asserts on the OUTPUT TREE directly
 /// (not just page contents, which `run_test_case`'s snapshot diff already
@@ -2407,11 +2367,9 @@ fn test_transclude_content_missing_page_error() {
 /// of regression a content-only diff can't catch: the reserved prefix must be
 /// stripped from the build output while ordinary assets are unaffected.
 ///
-/// EPUB coverage: intentionally NOT added here. `cases/head_control` only
-/// declares `formats = ["html"]`; wiring up a second EPUB-enabled fixture (or
-/// an `--epub` build of a project without a valid spine/title) is unrelated
-/// scaffolding for a single absence check and was judged not "cheap" per the
-/// bead's non-goals, so it's skipped entirely.
+/// HTML only: `cases/head_control` declares `formats = ["html"]`, and a
+/// second EPUB-enabled fixture would be unrelated scaffolding for one absence
+/// check.
 #[test]
 fn test_head_control_excludes_reserved_prefix() {
     let built = CompiledFixture::compile("cases/head_control", "head_control_tree", &["--html"])
@@ -2445,10 +2403,10 @@ fn test_head_control_excludes_reserved_prefix() {
 
 /// An UNRECOGNISED control asset under `.rheo/` (i.e. one rheo doesn't know
 /// how to consume, unlike `.rheo/head.html`) must still be excluded from the
-/// build output, and the compile must still succeed rather than hard-error —
-/// per the rheo-head-control-cbr bead, rheo warns about it instead. Inline
-/// temp project (per the bead's own suggestion) rather than a checked-in
-/// fixture, since this is a single arbitrary/unknown asset name.
+/// build output, and the compile must still succeed rather than hard-error:
+/// rheo warns instead, so a newer package against an older rheo degrades
+/// gracefully. Built inline rather than as a checked-in fixture, since this is
+/// a single arbitrary asset name.
 #[test]
 fn test_head_control_unrecognized_asset_excluded_and_warns() {
     let dir = tempfile::tempdir().expect("Failed to create temp dir");
@@ -2511,12 +2469,9 @@ fn test_head_control_unrecognized_asset_excluded_and_warns() {
     );
 }
 
-/// GREEN (rheo-tests-metadata-resolution-ess, case 5): a vertebra reads
-/// another vertebra's metadata via `(rheo-context().metadata-of)("chapters:b")`,
-/// the closure rheo-meta-beacons-2o5 added (rheo/docs/spikes/typst-native-metadata.md
-/// Q1). Originally written expecting a hard compile failure, since
-/// `metadata-of` wasn't a key on `rheo-context()` yet; rewritten now that it
-/// is, to assert on the actually-resolved cross-vertebra value instead.
+/// A vertebra reads another vertebra's metadata via
+/// `(rheo-context().metadata-of)("chapters:b")`, and gets that vertebra's real
+/// resolved title rather than its own or a path-derived guess.
 #[test]
 fn test_metadata_of_cross_vertebra_query() {
     let built = CompiledFixture::compile(
@@ -2534,17 +2489,14 @@ fn test_metadata_of_cross_vertebra_query() {
     );
 }
 
-/// GREEN (rheo-tests-metadata-resolution-ess, case 6): a vertebra with no
-/// `#set document(...)` at all falls back to its path-derived title, with no
-/// leakage from a sibling vertebra's title, and `metadata-of` returns an
-/// empty dict for it (mirroring spine-flat's own empty-dict convention) —
-/// all asserted inline in `check.typ`, invisible (assert-only) like
-/// `cases/spine_document_metadata/check.typ`. Originally written expecting a
-/// hard compile failure (metadata-of didn't exist yet); rewritten now that it
-/// does. `check.typ`'s `metadata-of` call needed wrapping in `#context`
-/// (query() requires a context scope) — a real bug in the original fixture,
-/// found and fixed once metadata-of started actually resolving instead of
-/// erroring on the missing key first.
+/// A vertebra with no `#set document(...)` at all falls back to its
+/// path-derived title, with no leakage from a sibling's, and `metadata-of`
+/// returns an empty dict for it — mirroring spine-flat's own empty-dict
+/// convention.
+///
+/// The assertions live inline in the fixture's `check.typ` (assert-only, so it
+/// renders nothing), which is why this test only checks that the build
+/// succeeded: a failed assert panics the Typst compile.
 #[test]
 fn test_metadata_no_document_no_leakage() {
     let built = CompiledFixture::compile(
@@ -2559,17 +2511,14 @@ fn test_metadata_no_document_no_leakage() {
     );
 }
 
-/// GREEN (rheo-tests-metadata-resolution-ess, case 7): a combined `--pdf`
-/// build (the default `SingleCombined` PDF layout) calling `metadata-of` for
-/// its own handle. Per the spike's Q6 finding, beacons are gated to
-/// `OnePerVertebra` (HTML/EPUB) layouts only, so `metadata-of` returns an
-/// empty dict under combined PDF rather than leaking a sibling's title — no
-/// beacon is ever emitted for this layout to query. Originally written
-/// expecting a hard compile failure (metadata-of didn't exist yet); rewritten
-/// now that it does, asserting the build simply succeeds with no crash (the
-/// empty-dict gating itself is unit-tested directly in `rheo/crates/core`;
-/// this integration case's job is to prove the combined-PDF *build* doesn't
-/// error, which is what actually mattered about Q6's hazard).
+/// A combined `--pdf` build (the default `SingleCombined` layout) calling
+/// `metadata-of` for its own handle must not error. Beacons are emitted only
+/// for `OnePerVertebra` layouts, since under one shared `#document` a beacon
+/// would report the preceding vertebra's `set document(...)` state, so
+/// `metadata-of` returns an empty dict here instead.
+///
+/// The empty-dict gating itself is unit-tested in `../rheo/crates/core`; this
+/// case's job is only to prove the combined-PDF build does not fall over.
 #[test]
 fn test_metadata_of_combined_pdf_no_crash() {
     let built = CompiledFixture::compile(
@@ -2622,17 +2571,13 @@ fn test_metadata_two_pass_resolves_bounded_code_block_title() {
     );
 }
 
-/// Today's EPUB author extraction reads a `rheo-author` Typst variable, or
-/// falls back to scraping an HTML `<meta name="author">` tag — it does NOT
-/// yet read Typst's own `#set document(author: ...)`. This fixture sets only
-/// the Typst document author (no `rheo-author`), so today's EPUB build must
-/// NOT surface it as `<dc:creator>`. This is a deliberately RED assertion:
-/// once rheo reads `#set document(author:)` off the resolved `DocumentInfo`
-/// (bead rheo-doc-info-harvest-f2r), this should start passing. Bespoke
-/// rather than `#[test_case]` because it opens the EPUB zip and reads
-/// package.opf directly for a field `EpubMetadata` doesn't model (and a
-/// `#[test_case]` registration would need committed reference metadata
-/// unrelated to this single assertion).
+/// EPUB's `<dc:creator>` comes from Typst's own `#set document(author: ...)`,
+/// read off the resolved `DocumentInfo` — not from an HTML `<meta
+/// name="author">` scrape, and not from the removed `rheo-author` variable.
+/// The fixture sets only the Typst document author.
+///
+/// Bespoke rather than `#[test_case]` because it opens the EPUB zip and reads
+/// `package.opf` for a field `EpubMetadata` does not model.
 #[test]
 fn test_epub_author_from_typst_document_author() {
     use rheo_tests::helpers::comparison::extract_epub_creator;
@@ -2673,18 +2618,16 @@ fn test_epub_author_absent_build_succeeds() {
     );
 }
 
-/// Covers rheo-tests-5ag's `--font-dir` half. The flag is `ArgAction::Append`
-/// (crates/cli/src/lib.rs) and, per `resolve_font_dirs`
-/// (crates/core/src/build.rs), is appended unconditionally on top of whatever
-/// the autoscan/config branch already produced. This project has no
-/// `font_dirs` in rheo.toml, so `fonts/` autoscans; two repeated --font-dir
-/// flags on top should bring the total to 3. No real font file is needed --
-/// `resolve_font_dirs` only checks directory existence, and the merged list
-/// is observable directly from the CLI's own `INFO loading fonts from N
-/// additional directories` line (crates/core/src/world.rs), so this asserts
-/// resolution/discovery rather than shipping a binary font into the repo
-/// (see rheo-tests-5ag and cases/font_dirs_disables_autoscan for the sibling
-/// case pinning the config-side autoscan-disable behaviour).
+/// `--font-dir` is `ArgAction::Append` and, per `resolve_font_dirs`, is added
+/// on top of whatever the autoscan/config branch already produced. This project
+/// has no `font_dirs` in rheo.toml, so `fonts/` autoscans and two repeated
+/// flags bring the total to 3.
+///
+/// No real font file is needed: `resolve_font_dirs` only checks that a
+/// directory exists, and the merged count is observable from the CLI's own
+/// `loading fonts from N additional directories` line — so this asserts
+/// resolution rather than shipping a binary font into the repo.
+/// `cases/font_dirs_disables_autoscan` pins the config side.
 #[test]
 fn test_font_dir_cli_flag_appends_and_repeats() {
     let dir = tempfile::tempdir().expect("Failed to create temp dir");
@@ -2753,8 +2696,7 @@ fn test_font_dir_cli_flag_appends_and_repeats() {
     );
 }
 
-/// rheo-tests-4tk decision: `--open` is NOT an untested gap that needs a new
-/// end-to-end test, for two reasons pinned here (not just in the bead):
+/// `--open` needs no end-to-end test of its own, for two reasons pinned here:
 ///
 /// 1. The flag only exists on `watch` -- `build_compile_command` in
 ///    ../rheo/crates/cli/src/lib.rs registers no "open" Arg at all, only
