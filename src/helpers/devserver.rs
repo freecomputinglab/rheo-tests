@@ -31,13 +31,16 @@ const REEDIT_INTERVAL: Duration = Duration::from_millis(1500);
 pub struct DevServer {
     child: Child,
     port: u16,
+    log: Arc<Mutex<String>>,
 }
 
 impl DevServer {
     /// Spawns `rheo watch <project_path> --open <extra_args>` and blocks until
-    /// the dev server reports its port. `RUST_LOG=rheo_html=info` forces that
-    /// log line regardless of the ambient verbosity default (`rheo=info` does
-    /// not match the `rheo_html` crate's tracing target).
+    /// the dev server reports its port.
+    ///
+    /// `RUST_LOG` names both crates explicitly: `rheo_html` for the bound-URL
+    /// line this waits for, and `rheo` for the CLI's own warnings — without the
+    /// latter, [`Self::log`] cannot see a failed in-memory rebuild at all.
     pub fn start(project_path: &Path, extra_args: &[&str]) -> Self {
         let mut cmd = rheo_cli_command();
         cmd.arg("watch")
@@ -45,7 +48,7 @@ impl DevServer {
             .arg("--open")
             .args(extra_args)
             .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-            .env("RUST_LOG", "rheo_html=info")
+            .env("RUST_LOG", "rheo=info,rheo_html=info")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         set_own_process_group(&mut cmd);
@@ -57,8 +60,9 @@ impl DevServer {
 
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         loop {
-            if let Some(port) = log.lock().unwrap().lines().find_map(parse_port) {
-                return DevServer { child, port };
+            let port = log.lock().unwrap().lines().find_map(parse_port);
+            if let Some(port) = port {
+                return DevServer { child, port, log };
             }
             if let Some(status) = child.try_wait().expect("failed to poll child") {
                 panic!(
@@ -98,6 +102,17 @@ impl DevServer {
             Some((_, body)) => body.to_string(),
             None => response,
         }
+    }
+
+    /// Everything the server has written to stdout/stderr so far.
+    ///
+    /// The dev server serves from disk whenever its in-memory rebuild has not
+    /// landed, and that fallback is always correct — so a served-vs-compiled
+    /// comparison cannot tell a working in-memory path from a failing one. The
+    /// only observable difference is the warning the CLI logs when
+    /// `compile_for_watch` returns an error.
+    pub fn log(&self) -> String {
+        self.log.lock().unwrap().clone()
     }
 
     /// Applies `edit`, then polls `get(path)` until `pred` accepts the body,

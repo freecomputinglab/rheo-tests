@@ -120,3 +120,77 @@ fn dev_server_serves_and_rebuilds_on_change() {
         |body| body.contains("Marker-v2"),
     );
 }
+
+/// A `<rheo-content>` placeholder may name a marrow-minted page whose output
+/// path does not end in `.html`. The on-disk path always allowed that; the
+/// dev-server path filtered its transclusion source map by extension, so the
+/// same project compiled fine and failed to serve. Asserts the served asset
+/// matches the compiled one byte for byte.
+#[test]
+fn served_transclusion_matches_compiled_for_a_non_html_page() {
+    let fixture = TestCase::new("cases/transclude_nonhtml_ext");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path();
+    copy_project_to_test_store(fixture.project_path(), project).expect("copy fixture");
+    fs::write(
+        project.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\ncontent_dir = \"content\"\n",
+            rheo_core::config::manifest_version::CURRENT
+        ),
+    )
+    .expect("patch rheo.toml version");
+
+    let server = DevServer::start(project, &["--html"]);
+
+    // Force one in-memory rebuild, so the request below cannot be answered by
+    // the disk fallback — which is always correct and would mask this exactly.
+    let index = project.join("content/index.typ");
+    let mut src = fs::read_to_string(&index).expect("read index.typ");
+    src.push_str("\nRebuildMarker\n");
+    server.wait_for_edit(
+        "/index.html",
+        || fs::write(&index, &src).expect("rewrite index.typ"),
+        |body| body.contains("RebuildMarker"),
+    );
+
+    let build_dir = project.join("build");
+    let compile = rheo_cli_command()
+        .args([
+            "compile",
+            project.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("run rheo compile");
+    assert!(
+        compile.status.success(),
+        "compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let compiled =
+        fs::read_to_string(build_dir.join("html/out.xml")).expect("read compiled out.xml");
+    assert!(
+        compiled.contains("Transcluded from a non-html extension."),
+        "the compiled asset should already carry the transcluded text:\n{compiled}"
+    );
+    assert_eq!(
+        server.get("/out.xml"),
+        compiled,
+        "served out.xml must match compiled out.xml"
+    );
+
+    // The comparison above passes either way: with the in-memory transclusion
+    // broken the server simply falls back to disk, which is correct. What
+    // distinguishes them is whether the in-memory compile failed at all.
+    let log = server.log();
+    assert!(
+        !log.contains("VirtualFs compile failed"),
+        "the dev server's in-memory compile must resolve a <rheo-content> \
+         naming a non-.html page; log:\n{log}"
+    );
+}
