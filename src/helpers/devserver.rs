@@ -16,8 +16,14 @@ use std::time::{Duration, Instant};
 /// Upper bound on waiting for the server to report its port. `rheo watch` is
 /// spawned via `cargo run`, which may need to build the binary first.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
-/// Upper bound on a single HTTP round-trip and on `wait_for`'s total poll budget.
-const IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Upper bound on a single HTTP round-trip and on `wait_for_edit`'s total budget.
+const IO_TIMEOUT: Duration = Duration::from_secs(8);
+/// How long to leave an edit alone before re-applying it — see
+/// [`DevServer::wait_for_edit`]. Must exceed the dev server's own debounce
+/// (`debounce_duration`, 1s, in `../rheo/crates/core/src/assets/watch.rs`),
+/// which is RESET by every filesystem event: re-writing faster than that keeps
+/// pushing the deadline back and the rebuild never fires at all.
+const REEDIT_INTERVAL: Duration = Duration::from_millis(1500);
 
 /// A running `rheo watch --open` subprocess. Killed (whole process group, so
 /// `cargo run`'s child survives no `kill` on the wrapper alone) on drop —
@@ -94,12 +100,33 @@ impl DevServer {
         }
     }
 
-    /// Polls `get(path)` until `pred` accepts the body, or panics after
-    /// [`IO_TIMEOUT`] with the last body seen. For asserting a live-reload
-    /// rebuild landed after a source edit.
-    pub fn wait_for(&self, path: &str, pred: impl Fn(&str) -> bool) -> String {
+    /// Applies `edit`, then polls `get(path)` until `pred` accepts the body,
+    /// re-applying `edit` every [`REEDIT_INTERVAL`] until [`IO_TIMEOUT`].
+    ///
+    /// The retry is not belt-and-braces; without it this is flaky by
+    /// construction. `rheo watch` logs its bound URL — which [`Self::start`]
+    /// waits for — from `plugin.open(...)`, but registers its filesystem
+    /// watcher later, after the initial build and the initial in-memory
+    /// compile (see `run_watch` in `../rheo/crates/cli/src/lib.rs`). An edit
+    /// landing in that window is not merely late: nothing is watching, so no
+    /// rebuild is ever triggered and a one-shot poll can only time out.
+    ///
+    /// Re-writing the same bytes still emits a modify event, so a later attempt
+    /// lands once the watcher is live — but only if attempts are spaced beyond
+    /// the server's debounce. See [`REEDIT_INTERVAL`].
+    pub fn wait_for_edit(
+        &self,
+        path: &str,
+        edit: impl Fn(),
+        pred: impl Fn(&str) -> bool,
+    ) -> String {
         let deadline = Instant::now() + IO_TIMEOUT;
+        let mut last_edit: Option<Instant> = None;
         loop {
+            if last_edit.is_none_or(|t| t.elapsed() >= REEDIT_INTERVAL) {
+                edit();
+                last_edit = Some(Instant::now());
+            }
             let body = self.get(path);
             if pred(&body) {
                 return body;

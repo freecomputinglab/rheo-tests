@@ -58,8 +58,11 @@ fn served_html_matches_compiled_html_for_rheo_head() {
     let c_typ = project.join("c.typ");
     let mut c_src = fs::read_to_string(&c_typ).expect("read c.typ");
     c_src.push_str("\nRebuildMarker\n");
-    fs::write(&c_typ, &c_src).expect("rewrite c.typ");
-    server.wait_for("/c.html", |body| body.contains("RebuildMarker"));
+    server.wait_for_edit(
+        "/c.html",
+        || fs::write(&c_typ, &c_src).expect("rewrite c.typ"),
+        |body| body.contains("RebuildMarker"),
+    );
 
     let build_dir = project.join("build");
     let compile = rheo_cli_command()
@@ -111,6 +114,9 @@ fn dev_server_serves_and_rebuilds_on_change() {
         "expected initial page to contain Marker-v1, got:\n{initial}"
     );
 
-    fs::write(&index, "= Watch Smoke Test\nMarker-v2\n").expect("rewrite index.typ");
-    server.wait_for("/", |body| body.contains("Marker-v2"));
+    server.wait_for_edit(
+        "/",
+        || fs::write(&index, "= Watch Smoke Test\nMarker-v2\n").expect("rewrite index.typ"),
+        |body| body.contains("Marker-v2"),
+    );
 }
