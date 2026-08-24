@@ -42,11 +42,21 @@ impl Default for TestMetadata {
     }
 }
 
-/// Parses a comma-separated list of quoted patterns, e.g. `"a", "b c"` -> `["a", "b c"]`.
-fn parse_quoted_list(s: &str) -> Vec<String> {
+/// Splits a comma-separated list, dropping empty entries:
+/// `html, pdf` -> `["html", "pdf"]`.
+fn parse_list(s: &str) -> Vec<String> {
     s.split(',')
-        .map(|p| p.trim())
+        .map(str::trim)
         .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// [`parse_list`], additionally stripping the surrounding quotes each entry
+/// carries: `"a", "b c"` -> `["a", "b c"]`.
+fn parse_quoted_list(s: &str) -> Vec<String> {
+    parse_list(s)
+        .iter()
         .map(|p| p.trim_matches('"').to_string())
         .collect()
 }
@@ -57,82 +67,44 @@ pub fn is_test_marker(line: &str) -> bool {
     trimmed.starts_with("//") && trimmed.contains("@rheo:test")
 }
 
-/// Parses test metadata from .typ file source
+/// Parses test metadata from .typ file source.
 ///
-/// Returns Some(TestMetadata) if the file contains // @rheo:test marker,
-/// otherwise returns None.
+/// Returns `Some(TestMetadata)` if the file carries the `@rheo:test` marker,
+/// otherwise `None` — a `.typ` file with any other marker but not that one is
+/// not a test case at all.
 pub fn parse_test_metadata(source: &str) -> Option<TestMetadata> {
     let mut has_test_marker = false;
     let mut metadata = TestMetadata::default();
 
     for line in source.lines() {
         let trimmed = line.trim();
-
-        // Must start with comment
         if !trimmed.starts_with("//") {
             continue;
         }
-
         let comment = trimmed.trim_start_matches("//").trim();
-
-        // Check for @rheo:test marker
-        if comment == "@rheo:test" {
-            has_test_marker = true;
+        let Some(marker) = comment.strip_prefix("@rheo:") else {
             continue;
-        }
+        };
+        // A bare marker splits to an empty value, which the two valueless
+        // markers below require — so `@rheo:test something` is not the marker.
+        let (name, value) = marker
+            .split_once(char::is_whitespace)
+            .unwrap_or((marker, ""));
+        let value = value.trim();
 
-        // Check for @rheo:keep-version marker
-        if comment == "@rheo:keep-version" {
-            metadata.keep_version = true;
-            continue;
-        }
-
-        // Parse @rheo:formats
-        if let Some(formats_str) = comment.strip_prefix("@rheo:formats") {
-            let formats_str = formats_str.trim();
-            metadata.formats = formats_str
-                .split(',')
-                .map(|f| f.trim().to_string())
-                .filter(|f| !f.is_empty())
-                .collect();
-            continue;
-        }
-
-        // Parse @rheo:description
-        if let Some(desc) = comment.strip_prefix("@rheo:description") {
-            metadata.description = Some(desc.trim().to_string());
-            continue;
-        }
-
-        // Parse @rheo:expect
-        if let Some(expect_str) = comment.strip_prefix("@rheo:expect") {
-            let expect_value = expect_str.trim().to_string();
-            if !expect_value.is_empty() {
-                metadata.expect = Some(expect_value);
-            }
-            continue;
-        }
-
-        // Parse @rheo:error-patterns
-        // Example: @rheo:error-patterns "error", "cannot add", "│"
-        if let Some(patterns_str) = comment.strip_prefix("@rheo:error-patterns") {
-            metadata.error_patterns = parse_quoted_list(patterns_str.trim());
-            continue;
-        }
-
-        // Parse @rheo:warn-patterns (same shape as error-patterns, checked on
-        // a successful build instead of a failing one)
-        if let Some(patterns_str) = comment.strip_prefix("@rheo:warn-patterns") {
-            metadata.warn_patterns = parse_quoted_list(patterns_str.trim());
-            continue;
+        match name {
+            "test" if value.is_empty() => has_test_marker = true,
+            "keep-version" if value.is_empty() => metadata.keep_version = true,
+            "formats" => metadata.formats = parse_list(value),
+            "description" => metadata.description = Some(value.to_string()),
+            "expect" if !value.is_empty() => metadata.expect = Some(value.to_string()),
+            "error-patterns" => metadata.error_patterns = parse_quoted_list(value),
+            "warn-patterns" => metadata.warn_patterns = parse_quoted_list(value),
+            _ => {}
         }
     }
 
-    if has_test_marker {
-        Some(metadata)
-    } else {
-        None
-    }
+    has_test_marker.then_some(metadata)
 }
 
 /// Reads test metadata from a .typ file
