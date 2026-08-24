@@ -522,8 +522,8 @@ fn test_warning_formatting() {
 /// Test that global and per-plugin `asset` patterns in rheo.toml copy files into the build output.
 #[test]
 fn test_asset_patterns() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Source files to copy
     std::fs::write(project_path.join("readme.txt"), "hello world")
@@ -537,33 +537,18 @@ fn test_asset_patterns() {
         .expect("Failed to write main.typ");
 
     // rheo.toml: global copies readme.txt; html-only copies assets/logo.png
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             copy = [\"readme.txt\"]\n\
-             \n\
-             [html.assets]\n\
-             copy = [\"assets/logo.png\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         copy = [\"readme.txt\"]\n\
+         \n\
+         [html.assets]\n\
+         copy = [\"assets/logo.png\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -594,8 +579,8 @@ fn test_asset_patterns() {
 /// Test that copy globs across multiple [[html.assets]] blocks are all collected.
 #[test]
 fn test_asset_patterns_multiple_blocks() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Source files to copy from two different directories
     std::fs::create_dir_all(project_path.join("css")).expect("Failed to create css dir");
@@ -610,35 +595,20 @@ fn test_asset_patterns_multiple_blocks() {
         .expect("Failed to write main.typ");
 
     // rheo.toml: two [[html.assets]] blocks each with their own copy patterns
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"css/**/*\"]\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"js/**/*\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"css/**/*\"]\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"js/**/*\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -660,8 +630,8 @@ fn test_asset_patterns_multiple_blocks() {
 /// Test that `**/*` glob patterns recursively copy nested files into the build output.
 #[test]
 fn test_asset_patterns_glob_recursive() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Create nested directory structure
     let icons_dir = project_path.join("images/icons");
@@ -676,32 +646,17 @@ fn test_asset_patterns_glob_recursive() {
         .expect("Failed to write main.typ");
 
     // rheo.toml with recursive glob pattern
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             copy = [\"images/**/*\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [html.assets]\n\
+         copy = [\"images/**/*\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -732,8 +687,8 @@ fn test_asset_patterns_glob_recursive() {
 /// preserving project-root-relative structure underneath.
 #[test]
 fn test_asset_patterns_dest_preserves_structure() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Single file + nested directory structure
     std::fs::write(project_path.join("image.png"), b"\x89PNG\r\n\x1a\n")
@@ -748,36 +703,21 @@ fn test_asset_patterns_dest_preserves_structure() {
         .expect("Failed to write main.typ");
 
     // rheo.toml: one block with dest, one without
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"image.png\", \"images/**/*\"]\n\
-             dest = \"allassets\"\n\
-             \n\
-             [[html.assets]]\n\
-             copy = [\"main.typ\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"image.png\", \"images/**/*\"]\n\
+         dest = \"allassets\"\n\
+         \n\
+         [[html.assets]]\n\
+         copy = [\"main.typ\"]\n",
+    ));
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -807,8 +747,8 @@ fn test_asset_patterns_dest_preserves_structure() {
 /// End-to-end test that `dest` works for both named assets and copy globs together.
 #[test]
 fn test_asset_dest_subdirectory() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // Source files
     std::fs::write(project_path.join("index.typ"), "= Hello\n\nWorld.\n").unwrap();
@@ -817,34 +757,19 @@ fn test_asset_dest_subdirectory() {
     std::fs::create_dir_all(project_path.join("dist")).unwrap();
     std::fs::write(project_path.join("dist/index.js"), "console.log(\"hi\");").unwrap();
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[html.assets]]\n\
-             dest = \"allassets\"\n\
-             copy = [\"image.png\"]\n\
-             js_scripts     = \"dist/index.js\"\n\
-             css_stylesheet = \"index.css\"\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .unwrap();
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [[html.assets]]\n\
+         dest = \"allassets\"\n\
+         copy = [\"image.png\"]\n\
+         js_scripts     = \"dist/index.js\"\n\
+         css_stylesheet = \"index.css\"\n",
+    ));
 
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -958,9 +883,9 @@ fn test_rheo_init_and_compile() {
 /// Test that asset path overrides work end-to-end via rheo.toml
 #[test]
 fn test_asset_path_override() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+    let build_dir = project.build_dir();
 
     // Custom CSS at non-default path
     std::fs::write(project_path.join("custom.css"), "body { color: red; }")
@@ -971,30 +896,15 @@ fn test_asset_path_override() {
         .expect("Failed to write main.typ");
 
     // rheo.toml with asset path override
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             css_stylesheet = \"custom.css\"\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"html\"]\n\
+        \n\
+        [html.assets]\n\
+        css_stylesheet = \"custom.css\"\n",
+    ));
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -1026,9 +936,9 @@ fn test_asset_path_override() {
 /// Test that subdirectory path overrides work end-to-end
 #[test]
 fn test_asset_path_override_subdirectory() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+    let build_dir = project.build_dir();
 
     // Custom CSS in subdirectory
     let styles_dir = project_path.join("styles");
@@ -1041,30 +951,15 @@ fn test_asset_path_override_subdirectory() {
         .expect("Failed to write main.typ");
 
     // rheo.toml with subdirectory override
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             css_stylesheet = \"styles/custom.css\"\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [html.assets]\n\
+         css_stylesheet = \"styles/custom.css\"\n",
+    ));
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -1091,8 +986,8 @@ fn test_asset_path_override_subdirectory() {
 /// Test that multiple [[html.assets]] blocks produce multiple stylesheet/script links in HTML.
 #[test]
 fn test_asset_multiple_blocks_inject_all() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     std::fs::write(project_path.join("one.css"), "/* one */").unwrap();
     std::fs::write(project_path.join("two.css"), "/* two */").unwrap();
@@ -1100,34 +995,19 @@ fn test_asset_multiple_blocks_inject_all() {
     std::fs::write(project_path.join("two.js"), "// two").unwrap();
     std::fs::write(project_path.join("hello.typ"), "Hello").unwrap();
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             [[html.assets]]\n\
-             css_stylesheet = \"one.css\"\n\
-             js_scripts     = \"one.js\"\n\
-             [[html.assets]]\n\
-             css_stylesheet = \"two.css\"\n\
-             js_scripts     = \"two.js\"\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .unwrap();
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         [[html.assets]]\n\
+         css_stylesheet = \"one.css\"\n\
+         js_scripts     = \"one.js\"\n\
+         [[html.assets]]\n\
+         css_stylesheet = \"two.css\"\n\
+         js_scripts     = \"two.js\"\n",
+    ));
 
-    let build_dir = project_path.join("build");
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
 
     assert!(
         output.status.success(),
@@ -1159,8 +1039,8 @@ fn test_asset_multiple_blocks_inject_all() {
 /// field and the key removal directly.
 #[test]
 fn test_rheo_context_target_and_no_legacy_key() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
     // A single vertebra renders the raw context target and probes the old key.
     std::fs::write(
@@ -1170,17 +1050,9 @@ fn test_rheo_context_target_and_no_legacy_key() {
          oldkey=#{ if \"rheo-target\" in sys.inputs { \"present\" } else { \"absent\" } }\n",
     )
     .unwrap();
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\", \"epub\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .unwrap();
+    project.manifest("formats = [\"html\", \"epub\"]\n");
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
     let output = rheo_cli_command()
         .args([
             "compile",
@@ -1245,25 +1117,20 @@ fn test_rheo_context_target_and_no_legacy_key() {
 /// referencing the original source file path (not a temp path).
 #[test]
 fn test_merged_imports_missing_file() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
     let content_dir = project_path.join("content");
     std::fs::create_dir_all(&content_dir).expect("Failed to create content dir");
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"pdf\"]\n\
-             \n\
-             [pdf.spine]\n\
-             title = \"Missing Import Test\"\n\
-             vertebrae = [\"content/chapter.typ\"]\n\
-             merge = true\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"pdf\"]\n\
+        \n\
+        [pdf.spine]\n\
+        title = \"Missing Import Test\"\n\
+        vertebrae = [\"content/chapter.typ\"]\n\
+        merge = true\n",
+    ));
 
     // chapter.typ imports a file that does not exist
     std::fs::write(
@@ -1272,7 +1139,7 @@ fn test_merged_imports_missing_file() {
     )
     .expect("Failed to write chapter.typ");
 
-    let build_dir = project_path.join("build");
+    let build_dir = project.build_dir();
 
     let output = rheo_cli_command()
         .args([
@@ -1308,27 +1175,21 @@ fn test_merged_imports_missing_file() {
 /// Typst compilation begins.
 #[test]
 fn test_escape_label_collision_error() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
     let content_dir = project_path.join("content");
     let sub_dir = content_dir.join("a");
     std::fs::create_dir_all(&sub_dir).expect("Failed to create content/a");
-    let build_dir = project_path.join("build");
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             content_dir = \"content\"\n\
-             \n\
-             [html.spine]\n\
-             title = \"Escape Collision Test\"\n\
-             vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"html\"]\n\
+        content_dir = \"content\"\n\
+        \n\
+        [html.spine]\n\
+        title = \"Escape Collision Test\"\n\
+        vertebrae = [\"root.typ\", \"a/file.typ\"]\n",
+    ));
 
     // root.typ hand-authors <a:file.typ>, which is the escape alias rheo would
     // synthesize for content/a/file.typ.
@@ -1344,17 +1205,7 @@ fn test_escape_label_collision_error() {
     )
     .expect("Failed to write a/file.typ");
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         !output.status.success(),
@@ -1378,38 +1229,22 @@ fn test_escape_label_collision_error() {
 /// (see reticulate/spine.rs SpineScan::build_section_nodes).
 #[test]
 fn test_spine_section_no_match_error() {
-    let dir = tempfile::tempdir().expect("Failed to create temp dir");
-    let project_path = dir.path();
-    let build_dir = project_path.join("build");
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
 
-    std::fs::write(
-        project_path.join("rheo.toml"),
-        format!(
-            "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [[spine.section]]\n\
-             name = \"ghost\"\n\
-             include = [\"nope.typ\"]\n",
-            manifest_version::CURRENT,
-        ),
-    )
-    .expect("Failed to write rheo.toml");
+    project.manifest(&format!(
+        "\
+        formats = [\"html\"]\n\
+        \n\
+        [[spine.section]]\n\
+        name = \"ghost\"\n\
+        include = [\"nope.typ\"]\n",
+    ));
 
     std::fs::write(project_path.join("intro.typ"), "= Intro\n\nContent.\n")
         .expect("Failed to write intro.typ");
 
-    let output = rheo_cli_command()
-        .args([
-            "compile",
-            project_path.to_str().unwrap(),
-            "--html",
-            "--build-dir",
-            build_dir.to_str().unwrap(),
-        ])
-        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
-        .output()
-        .expect("Failed to run rheo compile");
+    let output = project.compile(&["--html"]);
 
     assert!(
         !output.status.success(),
@@ -1770,14 +1605,17 @@ fn test_external_config_flag() {
     // an asset override that only exists here — if the build honours it, the flag
     // works. Asset paths resolve relative to the project root (custom.css above).
     let config_file = config_dir.join("external.toml");
+    // Deliberately NOT a TempProject manifest: the whole point of this case is
+    // that rheo.toml lives OUTSIDE the project root, which TempProject always
+    // writes inside it.
     std::fs::write(
         &config_file,
         format!(
             "version = \"{}\"\n\
-             formats = [\"html\"]\n\
-             \n\
-             [html.assets]\n\
-             css_stylesheet = \"custom.css\"\n",
+        formats = [\"html\"]\n\
+        \n\
+        [html.assets]\n\
+        css_stylesheet = \"custom.css\"\n",
             manifest_version::CURRENT,
         ),
     )
@@ -2554,6 +2392,8 @@ fn test_epub_author_absent_build_succeeds() {
 /// `cases/font_dirs_disables_autoscan` pins the config side.
 #[test]
 fn test_font_dir_cli_flag_appends_and_repeats() {
+    // Not a TempProject: this needs sibling directories BESIDE the project root
+    // to pass as --font-dir, and passes extra flags TempProject::compile does not.
     let dir = tempfile::tempdir().expect("Failed to create temp dir");
     let project_path = dir.path().join("project");
     let fonts_dir = project_path.join("fonts"); // autoscan candidate
@@ -2643,6 +2483,7 @@ fn test_font_dir_cli_flag_appends_and_repeats() {
 /// gap was the compile/watch split itself, which this test pins.
 #[test]
 fn test_open_flag_only_exists_on_watch_not_compile() {
+    // Not a TempProject: this asserts on a clap parse error and never compiles.
     let dir = tempfile::tempdir().expect("Failed to create temp dir");
     let project_path = dir.path().join("project");
     std::fs::create_dir_all(&project_path).expect("Failed to create project dir");

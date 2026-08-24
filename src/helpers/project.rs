@@ -30,23 +30,44 @@ impl TempProject {
             .join(", ");
         project.write(
             "rheo.toml",
-            &format!(
+            format!(
                 "version = \"{}\"\nformats = [{formats}]\n",
                 manifest_version::CURRENT
-            ),
+            )
+            .as_bytes(),
         );
         project
+    }
+
+    /// Replace `rheo.toml`'s body below the generated `version` line — for a
+    /// project whose configuration is itself the subject, so it declares its own
+    /// `formats`, `content_dir`, asset blocks and so on.
+    ///
+    /// Takes `&self` rather than `self` so it can be called after
+    /// [`Self::path`] has been bound, which most such tests do.
+    pub fn manifest(&self, body: &str) {
+        self.write(
+            "rheo.toml",
+            format!("version = \"{}\"\n{body}", manifest_version::CURRENT).as_bytes(),
+        );
     }
 
     /// Append lines to `rheo.toml`, for a project needing more than `formats`.
     pub fn config(self, extra: &str) -> Self {
         let existing = std::fs::read_to_string(self.path().join("rheo.toml")).expect("read config");
-        self.write("rheo.toml", &format!("{existing}{extra}"));
+        self.write("rheo.toml", format!("{existing}{extra}").as_bytes());
         self
     }
 
     /// Write a file, creating its parent directories.
     pub fn file(self, rel: &str, contents: &str) -> Self {
+        self.write(rel, contents.as_bytes());
+        self
+    }
+
+    /// [`Self::file`] for content that is not text, e.g. a stub image an asset
+    /// copy-glob test needs to exist without caring what is in it.
+    pub fn bytes(self, rel: &str, contents: &[u8]) -> Self {
         self.write(rel, contents);
         self
     }
@@ -87,7 +108,7 @@ impl TempProject {
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
     }
 
-    fn write(&self, rel: &str, contents: &str) {
+    fn write(&self, rel: &str, contents: &[u8]) {
         let path = self.path().join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("create parent directory");
