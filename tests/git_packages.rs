@@ -150,10 +150,11 @@ fn source_mode_serves_unbundled_modules() {
     fixture_repo(
         &repo,
         "built",
-        "[tool.rheo.html]\njs_scripts = \"dist/lib.js\"\n\n\
+        "[tool.rheo.html]\njs_scripts = \"dist/lib.js\"\ncss_stylesheet = \"src/pkg.css\"\n\n\
          [tool.rheo.source.html]\njs_scripts = [\"src/a.js\", \"src/b.js\"]\njs_module = true\n",
         &[
             ("src/lib.typ", ""),
+            ("src/pkg.css", "body { color: green; }"),
             ("src/a.js", "import { b } from './b.js';\nb();\n"),
             ("src/b.js", "export function b() {}\n"),
         ],
@@ -189,6 +190,19 @@ fn source_mode_serves_unbundled_modules() {
     assert!(
         !html.contains("defer"),
         "a module is deferred by default; emitting defer as well would only mislead:\n{html}",
+    );
+
+    // The source block names only the SCRIPTS. A package declares its stylesheet
+    // once, in the ordinary block, so a source block that replaced the whole
+    // block rather than overriding key by key would drop it — leaving a page
+    // with working JavaScript and no styling, and no error anywhere.
+    assert!(
+        build_dir.join("html/fixture/built/pkg.css").exists(),
+        "the ordinary block's stylesheet must survive source mode",
+    );
+    assert!(
+        html.contains("fixture/built/pkg.css"),
+        "the page must still link the package stylesheet:\n{html}",
     );
 }
 
