@@ -237,3 +237,51 @@ fn built_package_without_build_output_is_an_error() {
         "the error must name the package and the missing file:\n{stderr}",
     );
 }
+/// A package shipping a `.marrow.typ` mints pages from it. Locating packages by
+/// probing Typst's `{namespace}/{name}/{version}` layout cannot find one fetched
+/// from a ref, which lives at a path keyed by the resolved commit — so the marrow
+/// is never read and the package mints nothing, on a build that succeeds and
+/// reports nothing.
+///
+/// This hides on a developer machine, where the namespace is usually symlinked
+/// into the Typst cache and the probe therefore succeeds. The per-test
+/// `XDG_CACHE_HOME` is what makes it reproducible, and a deploy runner is the
+/// clean case that showed it.
+#[test]
+fn a_ref_packages_marrow_is_inlined() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    let project = tmp.path().join("project");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&project).unwrap();
+
+    fixture_repo(
+        &repo,
+        "mints",
+        "[tool.rheo.html]\ncss_stylesheet = \"src/pkg.css\"\n",
+        &[
+            ("src/lib.typ", ""),
+            ("src/pkg.css", "body { color: red; }"),
+            (
+                ".marrow.typ",
+                "#document(\"minted/from-marrow.html\", format: \"html\", \
+                 title: [Minted])[Minted by the package.]\n",
+            ),
+        ],
+    );
+    fixture_project(&project, &repo, "mints");
+
+    let build_dir = project.join("build");
+    let output = compile(&project, &build_dir, &cache);
+    assert!(
+        output.status.success(),
+        "compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    assert!(
+        build_dir.join("html/minted/from-marrow.html").exists(),
+        "the package's marrow minted no page: it was fetched, then located by a directory \
+         probe a sha-keyed checkout can never match, so its .marrow.typ was never read",
+    );
+}
