@@ -2521,3 +2521,183 @@ fn test_open_flag_only_exists_on_watch_not_compile() {
         "expected clap's error to name the unrecognized --open flag, got:\n{stderr}"
     );
 }
+
+/// Project-supplied `sys.inputs`: the `rheo.toml [inputs]` table, the repeatable
+/// `--input KEY=VALUE` flag, and the precedence between them.
+///
+/// Typst has no environment access, so `sys.inputs` is the only channel by which
+/// a build script can parameterise a compile — and until rheo forwarded these,
+/// `build_inputs` seeded exactly one key, `rheo-context`. `@rheo/rookery` 0.6.0's
+/// `exclude-tags` is the first consumer: one source tree, a public build with the
+/// `protected` notes genuinely absent and a dev build that keeps them.
+///
+/// `TempProject` rather than a `cases/` fixture, deliberately: every scenario
+/// below differs only in `rheo.toml` content and CLI flags, never in Typst
+/// source, so there is nothing for a checked-in fixture or a reference snapshot
+/// to hold. Bespoke `#[test]` rather than `#[test_case]` for the same reason
+/// `test_emit_bundle_source_flag` above is — it compiles one project several ways
+/// and compares. See rheo-tests bead rheo-tests-inputs-case-fi9.
+#[test]
+fn test_project_inputs_from_config_and_cli() {
+    // One vertebra reading two keys, so a single build reports both at once.
+    let source = "foo=#sys.inputs.at(\"foo\", default: \"MISSING\")\n\
+                  bar=#sys.inputs.at(\"bar\", default: \"MISSING\")\n";
+
+    // 1. Neither source set: the keys are simply absent. There is no
+    //    empty-string stand-in, which is why every read needs a `default:`.
+    let bare = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n")
+        .file("content/alpha.typ", source);
+    let out = bare.compile(&["--html"]);
+    assert!(
+        out.status.success(),
+        "bare compile failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = bare.read_built("html/alpha.html");
+    assert!(
+        html.contains("foo=MISSING"),
+        "expected no foo, got:\n{html}"
+    );
+
+    // 2. The `[inputs]` table alone — the declared baseline, so an ordinary build
+    //    needs no flags at all. This is the half that pairs with
+    //    `--config rheo.public.toml` for per-variant input sets.
+    let configured = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n\n[inputs]\nfoo = \"from-config\"\nbar = \"kept\"\n")
+        .file("content/alpha.typ", source);
+    let out = configured.compile(&["--html"]);
+    assert!(
+        out.status.success(),
+        "[inputs] compile failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = configured.read_built("html/alpha.html");
+    assert!(html.contains("foo=from-config"), "table not read:\n{html}");
+    assert!(html.contains("bar=kept"), "table not read:\n{html}");
+
+    // 2b. THE PHANTOM-SECTION REGRESSION GUARD, and the reason this assertion is
+    //     worth more than the happy path above. `RheoConfigRaw` carries
+    //     `#[serde(flatten)] extra`, and its `TryFrom` turns every unknown TABLE
+    //     into a `PluginSection` keyed by its name — so before rheo pulled
+    //     `inputs` out of `extra` first, an `[inputs]` table parsed cleanly,
+    //     warned about nothing, and was read by nobody. A feature that silently
+    //     does nothing is the failure mode to pin, so: no diagnostic mentioning an
+    //     unknown or phantom section, and (above) the value actually read.
+    let logs = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !logs.to_lowercase().contains("unknown"),
+        "an [inputs] table produced an unknown-key diagnostic:\n{logs}"
+    );
+
+    // 3. CLI PRECEDENCE. `--input` overrides the table PER KEY: `foo` changes and
+    //    `bar` survives, so overriding one input does not clear the rest.
+    let out = configured.compile(&["--html", "--input", "foo=from-cli"]);
+    assert!(
+        out.status.success(),
+        "--input compile failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = configured.read_built("html/alpha.html");
+    assert!(html.contains("foo=from-cli"), "CLI did not win:\n{html}");
+    assert!(
+        html.contains("bar=kept"),
+        "CLI override cleared another key:\n{html}"
+    );
+
+    // 4. Repeatable, and split on the FIRST `=` only so a value may contain one.
+    let out = bare.compile(&["--html", "--input", "foo=a=b", "--input", "bar=two"]);
+    assert!(
+        out.status.success(),
+        "repeated --input failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = bare.read_built("html/alpha.html");
+    assert!(html.contains("foo=a=b"), "value lost its own `=`:\n{html}");
+    assert!(html.contains("bar=two"), "second --input ignored:\n{html}");
+}
+
+/// `rheo-context` is rheo's own `sys.inputs` key, carrying the spine and the
+/// output format that every package reads. A project able to overwrite it could
+/// hand every package a forged spine, so BOTH sources reject it — and, most
+/// importantly, adding user inputs must not perturb it.
+#[test]
+fn test_project_inputs_cannot_displace_rheo_context() {
+    let source = "target=#sys.inputs.rheo-context.target\n\
+                  foo=#sys.inputs.at(\"foo\", default: \"MISSING\")\n";
+    let project = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n")
+        .file("content/alpha.typ", source);
+
+    // THE REGRESSION THIS EXISTS FOR: rheo's own key still resolves normally
+    // alongside a user key. Everything else here is about rejection; this is
+    // about the thing that must keep working.
+    let out = project.compile(&["--html", "--input", "foo=bar"]);
+    assert!(
+        out.status.success(),
+        "compile with a user input failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = project.read_built("html/alpha.html");
+    assert!(
+        html.contains("target=html"),
+        "rheo-context perturbed:\n{html}"
+    );
+    assert!(html.contains("foo=bar"), "user input not seeded:\n{html}");
+
+    // Rejected on the CLI, naming the key.
+    let out = project.compile(&["--html", "--input", "rheo-context=forged"]);
+    assert!(!out.status.success(), "--input rheo-context= was accepted");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("rheo-context"),
+        "the error must name the reserved key:\n{err}"
+    );
+
+    // Rejected in `rheo.toml` too — two entry points, one rule.
+    let reserved = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n\n[inputs]\nrheo-context = \"forged\"\n")
+        .file("content/alpha.typ", source);
+    let out = reserved.compile(&["--html"]);
+    assert!(!out.status.success(), "[inputs] rheo-context was accepted");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("rheo-context"),
+        "the config error must name the reserved key:\n{err}"
+    );
+}
+
+/// A malformed `--input` fails loudly. A typo'd input arriving at a package as an
+/// absent key is exactly the failure that costs an afternoon, so it is an error
+/// rather than something silently ignored. Values are STRINGS in both sources,
+/// with no coercion, so a non-string in `[inputs]` is a config error too.
+#[test]
+fn test_project_inputs_reject_malformed() {
+    let project = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n")
+        .file("content/alpha.typ", "= Alpha\n");
+
+    for bad in ["foo", "=novalue"] {
+        let out = project.compile(&["--html", "--input", bad]);
+        assert!(!out.status.success(), "--input {bad} was accepted");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("--input"),
+            "the error for `{bad}` should name --input:\n{err}"
+        );
+    }
+
+    let typed = TempProject::new(&["html"])
+        .config("content_dir = \"content\"\n\n[inputs]\nfoo = 3\n")
+        .file("content/alpha.typ", "= Alpha\n");
+    let out = typed.compile(&["--html"]);
+    assert!(
+        !out.status.success(),
+        "a non-string [inputs] value was accepted"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("string"),
+        "the error should name the expected type:\n{err}"
+    );
+}
