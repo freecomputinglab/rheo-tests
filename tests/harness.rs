@@ -806,6 +806,67 @@ fn test_asset_dest_subdirectory() {
     );
 }
 
+/// Guards against copy-glob/watch-glob engine divergence (rheo bead rheo-w8ph.2).
+///
+/// `copy_glob_patterns` (crates/core/src/assets/mod.rs) compiles `copy`
+/// patterns with the `glob` crate (0.3.3), which has no brace-alternation
+/// syntax — `{png,jpg}` is four literal characters. `WatchAssetSpec::new`
+/// (crates/core/src/assets/watch.rs) compiles the *same* pattern strings with
+/// `globset` (0.4.18), whose `Glob` parser treats `{a,b}` as real alternation.
+/// So `assets/*.{png,jpg}` is watched (globset matches `logo.png`) but not
+/// copied (glob looks for a literal `.{png,jpg}` suffix and finds nothing) —
+/// editing a watched asset silently never lands in the build output.
+///
+/// This asserts the files ARE copied, so it is red against current behaviour
+/// and green once core unifies on one glob engine.
+#[test]
+fn test_copy_glob_brace_alternation_matches_watch_engine() {
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+
+    std::fs::create_dir_all(project_path.join("assets")).expect("create assets dir");
+    std::fs::write(project_path.join("assets/logo.png"), b"\x89PNG\r\n\x1a\n")
+        .expect("write assets/logo.png");
+    std::fs::write(project_path.join("assets/photo.jpg"), b"\xff\xd8\xff\xe0")
+        .expect("write assets/photo.jpg");
+    // Near-miss: matches neither branch of the alternation, under either engine.
+    std::fs::write(project_path.join("assets/icon.svg"), "<svg></svg>")
+        .expect("write assets/icon.svg");
+
+    std::fs::write(project_path.join("main.typ"), "= Hello\n\nTest document.\n")
+        .expect("write main.typ");
+
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [html.assets]\n\
+         copy = [\"assets/*.{{png,jpg}}\"]\n",
+    ));
+
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        build_dir.join("html/assets/logo.png").is_file(),
+        "brace alternation: assets/logo.png not found in html output (glob crate has no {{a,b}} support)"
+    );
+    assert!(
+        build_dir.join("html/assets/photo.jpg").is_file(),
+        "brace alternation: assets/photo.jpg not found in html output (glob crate has no {{a,b}} support)"
+    );
+    assert!(
+        !build_dir.join("html/assets/icon.svg").exists(),
+        "near-miss: assets/icon.svg should not be copied by assets/*.{{png,jpg}}"
+    );
+}
+
 /// Test that `rheo init` creates a valid project that compiles successfully
 #[test]
 fn test_rheo_init_and_compile() {
