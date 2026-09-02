@@ -1,0 +1,9 @@
+version = "0.6.2"
+content_dir = "content"
+formats = ["html"]
+
+[html.spine]
+title = "Path Backed Package"
+
+[packages.demo]
+path = "pkgs"
