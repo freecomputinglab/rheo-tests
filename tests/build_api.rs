@@ -39,7 +39,7 @@ fn build_compiles_html_without_cli() {
 
     let project = ProjectConfig::from_path(temp.path(), None).expect("load project");
 
-    let mut build = Build::prepare(
+    let build = Build::prepare(
         project,
         vec![Box::new(rheo_html::HtmlPlugin)],
         BuildOptions {

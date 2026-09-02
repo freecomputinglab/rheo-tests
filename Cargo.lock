@@ -2948,7 +2948,6 @@ dependencies = [
  "chrono",
  "iref",
  "itertools",
- "markup5ever_rcdom",
  "mime_guess",
  "rheo-core",
  "serde",
