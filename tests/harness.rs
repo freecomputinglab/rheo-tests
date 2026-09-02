@@ -1264,6 +1264,56 @@ fn test_spine_section_no_match_error() {
     );
 }
 
+/// A failing compile must print `RheoError`'s `thiserror` Display text, not
+/// the enum's Debug form. `main() -> Result<()>` makes std format a returned
+/// error with `Debug`, so `RheoError::Compilation { count, errors }` would
+/// otherwise leak as a Rust struct literal — `Compilation { count: 2, errors:
+/// "error: ...\n..." }` — instead of the readable "Compilation failed with N
+/// error(s):" message (rheo-faqm.11). Also guards against the doubled
+/// "while failed to" wording a mis-nested IO-context message can produce
+/// (rheo-faqm.10).
+#[test]
+fn test_compile_error_uses_display_not_debug() {
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        "= Broken\n\nThe value is: #undefined_variable\n",
+    )
+    .expect("Failed to write main.typ");
+
+    let output = project.compile(&["--html"]);
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail on undefined variable"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !stderr.contains("Compilation {"),
+        "stderr should not show Debug struct syntax:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("count:"),
+        "stderr should not show the Debug 'count:' field:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("\\n"),
+        "stderr should not contain escaped newlines from Debug formatting:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("while failed to"),
+        "stderr should not contain doubled 'while failed to' wording:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Compilation failed with") && stderr.contains("error(s)"),
+        "stderr should contain the readable Display message, got:\n{stderr}"
+    );
+}
+
 /// `rheo migrate --apply` rewrites pre-0.4.0 cross-file link syntax
 /// (`#link("./file.typ")`) to the handle form (`#link(<handle>)`), leaves
 /// external URLs untouched, and bumps the project's `rheo.toml` version.
