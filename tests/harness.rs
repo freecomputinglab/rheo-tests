@@ -71,6 +71,7 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/target_function")]
 #[test_case("cases/target_function_in_module")]
 #[test_case("cases/target_function_in_package")]
+#[test_case("cases/path_backed_package")]
 #[test_case("cases/error_formatting/type_error.typ")]
 #[test_case("cases/error_formatting/undefined_var.typ")]
 #[test_case("cases/error_formatting/syntax_error.typ")]
