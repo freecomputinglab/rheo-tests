@@ -1,5 +1,5 @@
 use ntest::test_case;
-use rheo_core::{RheoConfig, config::manifest_version, config::project::ProjectConfig};
+use rheo_core::{RheoConfig, config::manifest_version, project::ProjectConfig};
 use rheo_tests::helpers::{
     cli::rheo_cli_command,
     comparison::{
