@@ -1,3 +1,8 @@
+# Diagnostic rendering moved out of rheo-core and into the CLI (rheo bead
+# rheo-w8ph.14): core now resolves diagnostics into a DiagnosticReport and
+# the CLI emits them with codespan-reporting. The rendered stderr is meant to
+# be unchanged by that move — the `│` gutter and file names these cases
+# match on are the assertion that it stayed so.
 
 # Test project for error formatting validation
 formats = ["pdf"]
