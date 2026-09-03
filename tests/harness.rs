@@ -1539,6 +1539,71 @@ fn migrate_converts_vertebrae_to_exclude() {
     );
 }
 
+/// `rheo migrate --apply` reports and removes the retired `[spine] merge` key,
+/// in the global table and a per-format one alike. There is nothing to convert
+/// it into — PDF combines its spine, HTML and EPUB paginate — and left in place
+/// it earns a warning on every build.
+#[test]
+fn migrate_drops_the_retired_merge_key() {
+    let test_case = TestCase::new("cases/migrate_merge_removal");
+    let original_project_path = test_case.project_path();
+
+    let test_store = PathBuf::from("store").join("migrate_merge_removal");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    // Dry run: names both tables, writes nothing.
+    let dry_run = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap()])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate (dry run)");
+    assert!(
+        dry_run.status.success(),
+        "migrate dry run failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&dry_run.stderr),
+        String::from_utf8_lossy(&dry_run.stdout),
+    );
+    let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
+    assert!(
+        dry_run_stdout.contains("[spine]: `merge`")
+            && dry_run_stdout.contains("[pdf.spine]: `merge`"),
+        "dry run did not report the merge key in both tables:\n{dry_run_stdout}"
+    );
+    assert!(
+        std::fs::read_to_string(test_store.join("rheo.toml"))
+            .expect("read rheo.toml")
+            .contains("merge"),
+        "dry run must not write"
+    );
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate --apply");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    assert!(
+        !toml_after.contains("merge"),
+        "merge key not removed by migration:\n{toml_after}"
+    );
+    // Unrelated keys survive.
+    assert!(
+        toml_after.contains("title = \"Migrate Merge Removal\""),
+        "the per-format title was collateral damage:\n{toml_after}"
+    );
+}
+
 /// `rheo migrate` REPORTS (never rewrites) the removed `[html] feed_*`
 /// rheo.toml keys and the removed `rheo-*` `.typ` variable bindings, since
 /// feed configuration does not map one-to-one onto `@rheo/feeds`'s Typst
