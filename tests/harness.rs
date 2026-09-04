@@ -1,5 +1,5 @@
 use ntest::test_case;
-use rheo_core::{RheoConfig, config::manifest_version, config::project::ProjectConfig};
+use rheo_core::{RheoConfig, config::manifest_version, project::ProjectConfig};
 use rheo_tests::helpers::{
     cli::rheo_cli_command,
     comparison::{
@@ -806,6 +806,67 @@ fn test_asset_dest_subdirectory() {
     );
 }
 
+/// Guards against copy-glob/watch-glob engine divergence (rheo bead rheo-w8ph.2).
+///
+/// `copy_glob_patterns` (crates/core/src/assets/mod.rs) compiles `copy`
+/// patterns with the `glob` crate (0.3.3), which has no brace-alternation
+/// syntax — `{png,jpg}` is four literal characters. `WatchAssetSpec::new`
+/// (crates/core/src/assets/watch.rs) compiles the *same* pattern strings with
+/// `globset` (0.4.18), whose `Glob` parser treats `{a,b}` as real alternation.
+/// So `assets/*.{png,jpg}` is watched (globset matches `logo.png`) but not
+/// copied (glob looks for a literal `.{png,jpg}` suffix and finds nothing) —
+/// editing a watched asset silently never lands in the build output.
+///
+/// This asserts the files ARE copied, so it is red against current behaviour
+/// and green once core unifies on one glob engine.
+#[test]
+fn test_copy_glob_brace_alternation_matches_watch_engine() {
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+
+    std::fs::create_dir_all(project_path.join("assets")).expect("create assets dir");
+    std::fs::write(project_path.join("assets/logo.png"), b"\x89PNG\r\n\x1a\n")
+        .expect("write assets/logo.png");
+    std::fs::write(project_path.join("assets/photo.jpg"), b"\xff\xd8\xff\xe0")
+        .expect("write assets/photo.jpg");
+    // Near-miss: matches neither branch of the alternation, under either engine.
+    std::fs::write(project_path.join("assets/icon.svg"), "<svg></svg>")
+        .expect("write assets/icon.svg");
+
+    std::fs::write(project_path.join("main.typ"), "= Hello\n\nTest document.\n")
+        .expect("write main.typ");
+
+    project.manifest(&format!(
+        "\
+         formats = [\"html\"]\n\
+         \n\
+         [html.assets]\n\
+         copy = [\"assets/*.{{png,jpg}}\"]\n",
+    ));
+
+    let build_dir = project.build_dir();
+    let output = project.compile(&["--html"]);
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        build_dir.join("html/assets/logo.png").is_file(),
+        "brace alternation: assets/logo.png not found in html output (glob crate has no {{a,b}} support)"
+    );
+    assert!(
+        build_dir.join("html/assets/photo.jpg").is_file(),
+        "brace alternation: assets/photo.jpg not found in html output (glob crate has no {{a,b}} support)"
+    );
+    assert!(
+        !build_dir.join("html/assets/icon.svg").exists(),
+        "near-miss: assets/icon.svg should not be copied by assets/*.{{png,jpg}}"
+    );
+}
+
 /// Test that `rheo init` creates a valid project that compiles successfully
 #[test]
 fn test_rheo_init_and_compile() {
@@ -1264,6 +1325,56 @@ fn test_spine_section_no_match_error() {
     );
 }
 
+/// A failing compile must print `RheoError`'s `thiserror` Display text, not
+/// the enum's Debug form. `main() -> Result<()>` makes std format a returned
+/// error with `Debug`, so `RheoError::Compilation { count, errors }` would
+/// otherwise leak as a Rust struct literal — `Compilation { count: 2, errors:
+/// "error: ...\n..." }` — instead of the readable "Compilation failed with N
+/// error(s):" message (rheo-faqm.11). Also guards against the doubled
+/// "while failed to" wording a mis-nested IO-context message can produce
+/// (rheo-faqm.10).
+#[test]
+fn test_compile_error_uses_display_not_debug() {
+    let project = TempProject::new(&["html"]);
+    let project_path = project.path();
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        "= Broken\n\nThe value is: #undefined_variable\n",
+    )
+    .expect("Failed to write main.typ");
+
+    let output = project.compile(&["--html"]);
+
+    assert!(
+        !output.status.success(),
+        "Expected compilation to fail on undefined variable"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !stderr.contains("Compilation {"),
+        "stderr should not show Debug struct syntax:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("count:"),
+        "stderr should not show the Debug 'count:' field:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("\\n"),
+        "stderr should not contain escaped newlines from Debug formatting:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("while failed to"),
+        "stderr should not contain doubled 'while failed to' wording:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Compilation failed with") && stderr.contains("error(s)"),
+        "stderr should contain the readable Display message, got:\n{stderr}"
+    );
+}
+
 /// `rheo migrate --apply` rewrites pre-0.4.0 cross-file link syntax
 /// (`#link("./file.typ")`) to the handle form (`#link(<handle>)`), leaves
 /// external URLs untouched, and bumps the project's `rheo.toml` version.
@@ -1425,6 +1536,71 @@ fn migrate_converts_vertebrae_to_exclude() {
     assert!(
         toml_after.contains("exclude") && toml_after.contains("lib"),
         "no equivalent [spine] exclude for the lib/ helper added:\n{toml_after}"
+    );
+}
+
+/// `rheo migrate --apply` reports and removes the retired `[spine] merge` key,
+/// in the global table and a per-format one alike. There is nothing to convert
+/// it into — PDF combines its spine, HTML and EPUB paginate — and left in place
+/// it earns a warning on every build.
+#[test]
+fn migrate_drops_the_retired_merge_key() {
+    let test_case = TestCase::new("cases/migrate_merge_removal");
+    let original_project_path = test_case.project_path();
+
+    let test_store = PathBuf::from("store").join("migrate_merge_removal");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    // Dry run: names both tables, writes nothing.
+    let dry_run = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap()])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate (dry run)");
+    assert!(
+        dry_run.status.success(),
+        "migrate dry run failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&dry_run.stderr),
+        String::from_utf8_lossy(&dry_run.stdout),
+    );
+    let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
+    assert!(
+        dry_run_stdout.contains("[spine]: `merge`")
+            && dry_run_stdout.contains("[pdf.spine]: `merge`"),
+        "dry run did not report the merge key in both tables:\n{dry_run_stdout}"
+    );
+    assert!(
+        std::fs::read_to_string(test_store.join("rheo.toml"))
+            .expect("read rheo.toml")
+            .contains("merge"),
+        "dry run must not write"
+    );
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate --apply");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    assert!(
+        !toml_after.contains("merge"),
+        "merge key not removed by migration:\n{toml_after}"
+    );
+    // Unrelated keys survive.
+    assert!(
+        toml_after.contains("title = \"Migrate Merge Removal\""),
+        "the per-format title was collateral damage:\n{toml_after}"
     );
 }
 

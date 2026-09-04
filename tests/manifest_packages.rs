@@ -1,5 +1,5 @@
 use rheo_core::config::manifest_version;
-use rheo_core::plugins::PackageIndex;
+use rheo_core::packages::PackageIndex;
 use rheo_tests::helpers::cli::rheo_cli_command;
 use rheo_tests::helpers::project::FakePackage;
 

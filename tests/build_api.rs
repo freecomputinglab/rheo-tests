@@ -3,7 +3,7 @@
 //! orchestrator moved out of `crates/cli`.
 
 use rheo_core::config::manifest_version;
-use rheo_core::config::project::ProjectConfig;
+use rheo_core::project::ProjectConfig;
 use rheo_core::{Build, BuildOptions};
 use std::fs;
 use tempfile::TempDir;
@@ -39,7 +39,7 @@ fn build_compiles_html_without_cli() {
 
     let project = ProjectConfig::from_path(temp.path(), None).expect("load project");
 
-    let mut build = Build::prepare(
+    let build = Build::prepare(
         project,
         vec![Box::new(rheo_html::HtmlPlugin)],
         BuildOptions {

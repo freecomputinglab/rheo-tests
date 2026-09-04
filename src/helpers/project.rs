@@ -132,7 +132,7 @@ impl FakePackage {
     /// `lib.typ` — what almost every caller wants before adding anything.
     ///
     /// `search_root` is a Typst package search directory: a bare tempdir for a
-    /// [`PackageIndex`](rheo_core::plugins::PackageIndex) test, or
+    /// [`PackageIndex`](rheo_core::packages::PackageIndex) test, or
     /// `<xdg dir>/typst/packages` for an end-to-end compile.
     pub fn new(search_root: &Path, spec: &str) -> Self {
         let (namespace, name, version) = parse_spec(spec);
