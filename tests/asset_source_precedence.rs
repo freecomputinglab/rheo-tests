@@ -8,8 +8,10 @@
 //!    default is pushed when `user_pairs.is_empty()`, NOT `all_pairs.is_empty()`
 //!    — a package block is additive and must never satisfy the project's own
 //!    emptiness test.
-//! 2. (`assets/mod.rs:161-170`) a missing declared file warns only
-//!    `if !is_pkg` — a package-declared file that's missing stays silent.
+//! 2. a missing declared file warns only for a user-written
+//!    `[[<plugin>.assets]]` override. Both `Package` and `ProjectDefault` stay
+//!    silent, since rheo proposed those paths itself and their absence is the
+//!    normal case rather than misconfiguration.
 //!
 //! Confirmed by reading `../rheo` before writing these: both match the code
 //! exactly as described above.
@@ -210,5 +212,56 @@ fn test_package_block_missing_file_is_silent() {
     assert!(
         !stderr.contains("missing.css"),
         "a package's missing declared file must not warn:\n{stderr}"
+    );
+}
+
+/// The html plugin proposes `index.js` itself, as its project-root filename
+/// convention. A project that never asked for one is the normal case, so its
+/// absence must stay silent rather than warn on every build.
+#[test]
+fn test_project_default_missing_file_is_silent() {
+    let project = TempProject::new(&["html"])
+        .file("style.css", "/* project default */")
+        .file("main.typ", "= Hello\n\nTest document.\n");
+
+    let output = project.compile(&["--html"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "compile failed: {stderr}");
+
+    assert!(
+        !stderr.contains("index.js"),
+        "the unrequested project-root convention file must not be mentioned:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("asset override path not found"),
+        "a project that declared no override has nothing to warn about:\n{stderr}"
+    );
+}
+
+/// The counterpart to [`test_project_default_missing_file_is_silent`]: a path
+/// the project actually wrote down still warns when it is not on disk, since
+/// only that represents an intent rheo failed to satisfy. An optional one
+/// warns without failing the build.
+#[test]
+fn test_user_override_missing_file_warns() {
+    let project = TempProject::new(&["html"])
+        .config("\n[html.assets]\njs_scripts = \"does-not-exist.js\"\n")
+        .file("style.css", "/* project default */")
+        .file("main.typ", "= Hello\n\nTest document.\n");
+
+    let output = project.compile(&["--html"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "a missing optional override warns but must not fail the build: {stderr}"
+    );
+
+    assert!(
+        stderr.contains("asset override path not found"),
+        "a user-declared override that is missing must warn:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("does-not-exist.js"),
+        "the warning must name the path the project asked for:\n{stderr}"
     );
 }
