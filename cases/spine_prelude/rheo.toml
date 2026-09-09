@@ -1,0 +1,7 @@
+version = "0.6.2"
+formats = ["html"]
+content_dir = "content"
+
+[spine]
+exclude = ["_lib/**"]
+prelude = "_lib/prelude.typ"

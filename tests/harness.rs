@@ -2878,3 +2878,60 @@ fn test_project_inputs_reject_malformed() {
         "the error should name the expected type:\n{err}"
     );
 }
+
+/// `[spine] prelude` is prepended INSIDE each vertebra, after its own
+/// `rheo-context()` binding — so the same text yields a different handle per
+/// page, and its `#let`s are in the page's scope (which marrow's cannot be,
+/// a vertebra being `#include`d). Depth matters: the fixture has a nested
+/// vertebra too, since one relative import in the prelude would resolve
+/// against each page's own directory.
+#[test]
+fn test_spine_prelude() {
+    let built = CompiledFixture::compile("cases/spine_prelude", "spine_prelude", &["--html"])
+        .expect_success();
+
+    let index = built.read("html/index.html");
+    assert!(
+        index.contains("Handle: index"),
+        "prelude did not bind the root page's own handle:\n{index}"
+    );
+    assert!(
+        index.contains("!! from the prelude !!"),
+        "a prelude #let was not callable from the page:\n{index}"
+    );
+
+    let nested = built.read("html/deep/nested.html");
+    assert!(
+        nested.contains("Handle: deep:nested"),
+        "a nested vertebra got the wrong handle:\n{nested}"
+    );
+
+    // The prelude is excluded from the spine, so it mints no page of its own.
+    assert!(
+        !built.path("html/_lib/prelude.html").exists(),
+        "the prelude was compiled as an ordinary vertebra"
+    );
+}
+
+/// `.marrow.prelude.typ` and `.marrow.epilogue.typ` are the explicit names, and
+/// either outranks a bare `.marrow.typ` — which is why the fixture's bare
+/// marrow, whose `asset()` would be plainly visible, emits nothing.
+#[test]
+fn test_marrow_explicit_names_outrank_bare() {
+    let built = CompiledFixture::compile("cases/marrow_names", "marrow_names", &["--html"])
+        .expect_success();
+
+    let index = built.read("html/index.html");
+    assert!(
+        index.contains("TOUCHED"),
+        ".marrow.prelude.typ did not reach the pre-existing vertebra:\n{index}"
+    );
+    assert!(
+        !built.path("html/bare-marrow-ran.txt").exists(),
+        ".marrow.typ ran despite an explicit marrow name being present"
+    );
+    assert!(
+        !built.path("html/.marrow.prelude.html").exists(),
+        ".marrow.prelude.typ was compiled as an ordinary vertebra"
+    );
+}
