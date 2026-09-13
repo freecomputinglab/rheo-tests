@@ -1,3 +1,6 @@
 version = "0.5.0"
 formats = ["html"]
 content_dir = "content"
+
+[spine]
+auto_index = false

@@ -4,3 +4,6 @@ content_dir = "content"
 
 [html.spine]
 title = "Cross Directory Label Collision Test"
+
+[spine]
+auto_index = false

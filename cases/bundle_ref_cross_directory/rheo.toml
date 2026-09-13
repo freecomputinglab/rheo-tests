@@ -3,3 +3,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Bundle Cross-Directory Test"
+
+[spine]
+auto_index = false

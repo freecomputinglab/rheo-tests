@@ -4,3 +4,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Nested Vertebra Href"
+
+[spine]
+auto_index = false

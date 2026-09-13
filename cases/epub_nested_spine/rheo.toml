@@ -3,3 +3,6 @@ formats = ["epub"]
 
 [epub.spine]
 title = "Epub Nested Spine"
+
+[spine]
+auto_index = false

@@ -6,7 +6,7 @@ priority: 3
 labels:
 - feat-auto-index
 deps: []
-closed: false
+closed: true
 ---
 The engine bird `rh-auto-index-for-index-less-directories-06a3c261` (in
 `../rheo`, same label `feat-auto-index`) flips `[spine] auto_index` on BY

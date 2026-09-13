@@ -3,3 +3,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Relative Path Test"
+
+[spine]
+auto_index = false

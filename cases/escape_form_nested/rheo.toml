@@ -4,3 +4,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Escape Form Nested"
+
+[spine]
+auto_index = false
