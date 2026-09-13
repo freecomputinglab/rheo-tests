@@ -6,7 +6,7 @@ priority: 2
 labels:
 - feat-auto-index
 deps: []
-closed: false
+closed: true
 ---
 rheo is gaining a `[spine] auto_index` key, DEFAULT TRUE: a content directory
 with no landing file (`index.typ`, or `<dirname>.typ`) currently produces no

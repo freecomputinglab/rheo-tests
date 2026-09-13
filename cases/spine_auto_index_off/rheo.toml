@@ -1,0 +1,9 @@
+version = "0.6.2"
+# Same layout as spine_auto_index, but `auto_index` is explicitly disabled:
+# `guide/` (no index.typ or guide.typ) stays a non-clickable group node with
+# no synthesized landing page — today's behaviour, pinned here so a later
+# change to the default can't silently take this escape hatch away too.
+formats = ["html"]
+
+[spine]
+auto_index = false
