@@ -3,3 +3,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Cross Directory Test"
+
+[spine]
+auto_index = false

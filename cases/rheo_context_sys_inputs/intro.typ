@@ -25,7 +25,7 @@ Guarded handle: #(if "rheo-context" in sys.inputs { rheo-context().handle } else
     assert(type(v) == dictionary, message: "spine-flat entry must be dict")
     // `metadata` was removed from spine-flat entries by rheo-meta-beacons-2o5;
     // per-vertebra metadata now comes from `rheo-context().metadata-of`.
-    assert(v.keys().sorted() == ("handle", "path", "title"), message: "spine-flat entry keys: " + repr(v.keys()))
+    assert(v.keys().sorted() == ("handle", "path", "synthesized", "title"), message: "spine-flat entry keys: " + repr(v.keys()))
     assert(type(v.handle) == str, message: "spine-flat handle must be str")
     assert(type(v.path) == str, message: "spine-flat path must be str")
     assert(type(v.title) == str, message: "spine-flat title must be str")
@@ -38,7 +38,7 @@ Guarded handle: #(if "rheo-context" in sys.inputs { rheo-context().handle } else
   assert(type(ctx.spine) == array, message: "spine must be array")
   let check-node(n) = {
     assert(type(n) == dictionary, message: "spine node must be dict")
-    assert(n.keys().sorted() == ("children", "handle", "path", "title"), message: "spine node keys: " + repr(n.keys()))
+    assert(n.keys().sorted() == ("children", "handle", "path", "synthesized", "title"), message: "spine node keys: " + repr(n.keys()))
     assert(type(n.title) == str, message: "node title must be str")
     assert(n.handle == none or type(n.handle) == str, message: "node handle must be str or none")
     assert(n.path == none or type(n.path) == str, message: "node path must be str or none")

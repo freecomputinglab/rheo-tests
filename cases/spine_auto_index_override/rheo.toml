@@ -1,0 +1,11 @@
+version = "0.6.2"
+# Same layout again, `auto_index` left at its default (true), but the
+# project's own `[spine] prelude` rebinds `rheo-index()`. The project's
+# prelude is prepended after rheo's own injection, so this binding wins for
+# every synthesized directory landing page: `guide/`'s page should carry the
+# project's markup, not rheo's default child-listing.
+formats = ["html"]
+
+[spine]
+exclude = ["_lib/**"]
+prelude = "_lib/prelude.typ"

@@ -1,0 +1,3 @@
+version = "0.6.2"
+formats = ["html"]
+content_dir = "content"

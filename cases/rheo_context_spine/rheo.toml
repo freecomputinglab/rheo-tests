@@ -3,3 +3,6 @@ formats = ["html"]
 
 [html.spine]
 title = "rheo-context spine"
+
+[spine]
+auto_index = false

@@ -68,10 +68,16 @@ When a rheo-tests PR pairs with a rheo PR:
 │   │   │   └── epub/
 │   │   └── blog_post/
 │   └── cases/
-└── store/                  # Compat test fixtures (committed)
-    └── compat/
-        └── merged-imports/
+└── store/                  # Compat test fixtures (committed) plus, under
+    └── compat/             # compat/, `clone_repo`'s locally-cached checkouts
+        └── merged-imports/ # (gitignored, RUN_COMPAT_TESTS=1 only)
 ```
+
+Every other test copies its fixture into a scratch tree under
+`target/test-store/<name>/` instead — `target/` is gitignored wholesale, so a
+copy or a `rheo migrate --apply` rewrite in place can never be mistaken for a
+committed fixture or picked up by a commit. `store/` itself holds nothing a
+test is allowed to write into or clear; it is a source directory only.
 
 ## Running Tests
 

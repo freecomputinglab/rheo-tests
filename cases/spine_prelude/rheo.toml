@@ -1,0 +1,10 @@
+version = "0.6.2"
+formats = ["html"]
+content_dir = "content"
+
+[spine]
+# No scan filter set here on purpose: rheo itself omits the prelude's own
+# path from the spine scan, so `_lib/prelude.typ` mints no page of its own,
+# and `_lib/` is then dropped for having no other children — not because
+# this project's own config says so.
+prelude = "_lib/prelude.typ"

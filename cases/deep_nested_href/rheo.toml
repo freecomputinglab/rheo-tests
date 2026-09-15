@@ -4,3 +4,6 @@ formats = ["html"]
 
 [html.spine]
 title = "Deep Nested Href"
+
+[spine]
+auto_index = false

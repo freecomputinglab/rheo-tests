@@ -91,6 +91,9 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/math")]
 #[test_case("cases/rheo_context_spine")]
 #[test_case("cases/spine_scan_tree")]
+#[test_case("cases/spine_auto_index")]
+#[test_case("cases/spine_auto_index_off")]
+#[test_case("cases/spine_auto_index_override")]
 #[test_case("cases/spine_exclude")]
 #[test_case("cases/spine_sections")]
 #[test_case("cases/spine_include")]
@@ -287,7 +290,7 @@ fn test_pdf_merge() {
     let original_project_path = test_case.project_path();
 
     // Create isolated test store
-    let test_store = PathBuf::from("store").join(test_name);
+    let test_store = PathBuf::from("target/test-store").join(test_name);
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -870,7 +873,7 @@ fn test_copy_glob_brace_alternation_matches_watch_engine() {
 /// Test that `rheo init` creates a valid project that compiles successfully
 #[test]
 fn test_rheo_init_and_compile() {
-    let test_dir = PathBuf::from("store/init_project");
+    let test_dir = PathBuf::from("target/test-store/init_project");
 
     // Clean previous test artifacts
     if test_dir.exists() {
@@ -1384,7 +1387,7 @@ fn migrate_rewrites_links() {
     let original_project_path = test_case.project_path();
 
     // Migrate mutates the project in place, so operate on an isolated copy.
-    let test_store = PathBuf::from("store").join("migrate_link_syntax");
+    let test_store = PathBuf::from("target/test-store").join("migrate_link_syntax");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1431,7 +1434,7 @@ fn migrate_rewrites_target() {
     let original_project_path = test_case.project_path();
 
     // Migrate mutates the project in place, so operate on an isolated copy.
-    let test_store = PathBuf::from("store").join("migrate_target_syntax");
+    let test_store = PathBuf::from("target/test-store").join("migrate_target_syntax");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1484,7 +1487,7 @@ fn migrate_converts_vertebrae_to_exclude() {
     let test_case = TestCase::new("cases/migrate_vertebrae_exclude");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_vertebrae_exclude");
+    let test_store = PathBuf::from("target/test-store").join("migrate_vertebrae_exclude");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1539,6 +1542,58 @@ fn migrate_converts_vertebrae_to_exclude() {
     );
 }
 
+/// `rheo migrate --apply` converts the retired top-level `marrow` filename
+/// override and `dot_marrow_is_epilogue` boolean into a single `[marrow]`
+/// table with `file` and `position` keys. `dot_marrow_is_epilogue = false`
+/// means the bare marrow was a PROLOGUE, so it migrates to
+/// `position = "prologue"`.
+#[test]
+fn migrate_converts_marrow_table() {
+    let test_case = TestCase::new("cases/migrate_marrow_table");
+    let original_project_path = test_case.project_path();
+
+    let test_store = PathBuf::from("target/test-store").join("migrate_marrow_table");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate --apply");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    assert!(
+        toml_after.contains("[marrow]"),
+        "no [marrow] table added by migration:\n{toml_after}"
+    );
+    assert!(
+        toml_after.contains(r#"file = "bundle-root.typ""#),
+        "marrow filename override not migrated to [marrow] file:\n{toml_after}"
+    );
+    assert!(
+        toml_after.contains(r#"position = "prologue""#),
+        "dot_marrow_is_epilogue = false not migrated to [marrow] position = \"prologue\":\n{toml_after}"
+    );
+    assert!(
+        !toml_after.contains("dot_marrow_is_epilogue"),
+        "dot_marrow_is_epilogue key not removed by migration:\n{toml_after}"
+    );
+    assert!(
+        !toml_after.contains("marrow = \"bundle-root.typ\""),
+        "top-level marrow key not removed by migration:\n{toml_after}"
+    );
+}
+
 /// `rheo migrate --apply` reports and removes the retired `[spine] merge` key,
 /// in the global table and a per-format one alike. There is nothing to convert
 /// it into — PDF combines its spine, HTML and EPUB paginate — and left in place
@@ -1548,7 +1603,7 @@ fn migrate_drops_the_retired_merge_key() {
     let test_case = TestCase::new("cases/migrate_merge_removal");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_merge_removal");
+    let test_store = PathBuf::from("target/test-store").join("migrate_merge_removal");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1613,7 +1668,7 @@ fn migrate_reports_removed_feed_surface() {
     let test_case = TestCase::new("cases/migrate_feed_removal");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_feed_removal");
+    let test_store = PathBuf::from("target/test-store").join("migrate_feed_removal");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1699,7 +1754,7 @@ fn migrate_reports_removed_feed_surface() {
 #[test]
 fn test_default_css_is_linked_asset() {
     let project = "cases/default_css_linked";
-    let build_dir = PathBuf::from("store").join("default_css_linked_build");
+    let build_dir = PathBuf::from("target/test-store").join("default_css_linked_build");
     let _ = std::fs::remove_dir_all(&build_dir);
 
     let output = rheo_cli_command()
@@ -2208,7 +2263,7 @@ fn test_nested_marrow_file_warns() {
 #[test]
 fn test_package_assets_depth_relative_on_nested_pages() {
     let project = "cases/package_asset_nested";
-    let build_dir = PathBuf::from("store").join("package_asset_nested_build");
+    let build_dir = PathBuf::from("target/test-store").join("package_asset_nested_build");
     let _ = std::fs::remove_dir_all(&build_dir);
 
     let output = rheo_cli_command()
@@ -2876,5 +2931,234 @@ fn test_project_inputs_reject_malformed() {
     assert!(
         err.contains("string"),
         "the error should name the expected type:\n{err}"
+    );
+}
+
+/// `[spine] prelude` is prepended INSIDE each vertebra, after its own
+/// `rheo-context()` binding — so the same text yields a different handle per
+/// page, and its `#let`s are in the page's scope (which marrow's cannot be,
+/// a vertebra being `#include`d). Depth matters: the fixture has a nested
+/// vertebra too, since one relative import in the prelude would resolve
+/// against each page's own directory.
+#[test]
+fn test_spine_prelude() {
+    let built = CompiledFixture::compile("cases/spine_prelude", "spine_prelude", &["--html"])
+        .expect_success();
+
+    let index = built.read("html/index.html");
+    assert!(
+        index.contains("Handle: index"),
+        "prelude did not bind the root page's own handle:\n{index}"
+    );
+    assert!(
+        index.contains("!! from the prelude !!"),
+        "a prelude #let was not callable from the page:\n{index}"
+    );
+
+    let nested = built.read("html/deep/nested.html");
+    assert!(
+        nested.contains("Handle: deep:nested"),
+        "a nested vertebra got the wrong handle:\n{nested}"
+    );
+
+    assert!(built.path("html/index.html").exists(), "the root page went missing");
+    assert!(built.path("html/deep/nested.html").exists(), "the nested page went missing");
+
+    // rheo excludes the prelude's own path from the spine scan (the project's
+    // rheo.toml sets no exclude of its own), so it mints no page of its own.
+    assert!(
+        !built.path("html/_lib/prelude.html").exists(),
+        "the prelude was compiled as an ordinary vertebra"
+    );
+    // A consequence of the above, not something enforced directly: once the
+    // prelude is excluded, `_lib/` has no remaining children, so the scan
+    // drops the directory node instead of synthesizing a landing page for it.
+    assert!(
+        !built.path("html/_lib.html").exists(),
+        "the prelude's own directory got a synthesized index page"
+    );
+}
+
+/// `.marrow.prologue.typ` and `.marrow.epilogue.typ` are the explicit names, and
+/// either outranks a bare `.marrow.typ` — which is why the fixture's bare
+/// marrow, whose `asset()` would be plainly visible, emits nothing.
+#[test]
+fn test_marrow_explicit_names_outrank_bare() {
+    let built = CompiledFixture::compile("cases/marrow_names", "marrow_names", &["--html"])
+        .expect_success();
+
+    let index = built.read("html/index.html");
+    assert!(
+        index.contains("TOUCHED"),
+        ".marrow.prologue.typ did not reach the pre-existing vertebra:\n{index}"
+    );
+    assert!(
+        !built.path("html/bare-marrow-ran.txt").exists(),
+        ".marrow.typ ran despite an explicit marrow name being present"
+    );
+    assert!(
+        !built.path("html/.marrow.prologue.html").exists(),
+        ".marrow.prologue.typ was compiled as an ordinary vertebra"
+    );
+}
+
+/// `[marrow] position = "prologue"` moves a BARE `.marrow.typ` to splice
+/// before the vertebra, so a `#show` rule in it reaches the vertebra's own
+/// markup — the default (`"epilogue"`) would not.
+#[test]
+fn test_marrow_position_prologue() {
+    let built = CompiledFixture::compile(
+        "cases/marrow_position_prologue",
+        "marrow_position_prologue",
+        &["--html"],
+    )
+    .expect_success();
+
+    let index = built.read("html/index.html");
+    assert!(
+        index.contains("MARROW-REACHED"),
+        "a prologue-positioned bare marrow did not reach the vertebra:\n{index}"
+    );
+}
+
+/// A synthesized directory index (`auto_index`) must render its children in
+/// the combined PDF too, as label links, and not silently come out blank.
+#[test]
+fn test_spine_auto_index_pdf_links() {
+    use lopdf::Document;
+
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_pdf",
+        "spine_auto_index_pdf",
+        &["--pdf"],
+    )
+    .expect_success();
+    let pdf_path = built.path("pdf/spine_auto_index_pdf.pdf");
+    assert!(pdf_path.exists(), "PDF not created at {pdf_path:?}");
+
+    let doc = Document::load(&pdf_path).expect("load combined PDF");
+    let total_annots: usize = doc
+        .get_pages()
+        .values()
+        .map(|&id| {
+            doc.get_dictionary(id)
+                .ok()
+                .and_then(|page| page.get(b"Annots").ok())
+                .and_then(|annots| annots.as_array().ok())
+                .map_or(0, |a| a.len())
+        })
+        .sum();
+
+    assert!(
+        total_annots >= 2,
+        "expected at least 2 link annotations (one per child of guide/), got {total_annots}"
+    );
+}
+
+/// A real, author-written `index.typ` is not `auto_index`'s business: its
+/// title comes from its own stem ("Index"), never from its parent directory's
+/// name. Only a SYNTHESIZED landing page (no `index.typ`/`<dirname>.typ` on
+/// disk) takes the prettified directory name.
+#[test]
+fn test_spine_real_index_title_stays_index() {
+    let built = CompiledFixture::compile(
+        "cases/spine_real_index_title",
+        "spine_real_index_title",
+        &["--html"],
+    )
+    .expect_success();
+
+    let guide = built.read("html/guide.html");
+    assert!(
+        guide.contains("<title>Index</title>"),
+        "a real guide/index.typ must keep its stem-derived title 'Index':\n{guide}"
+    );
+}
+
+/// `auto_index` fills an ABSENCE, never an EXCLUSION: when a directory's
+/// landing file exists but is excluded via `[spine] exclude`, the directory
+/// must become a non-clickable group node (no page at all) rather than have
+/// `auto_index` mint a synthesized replacement at the same output path.
+#[test]
+fn test_spine_auto_index_excluded_landing() {
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_excluded_landing",
+        "spine_auto_index_excluded_landing",
+        &["--html"],
+    )
+    .expect_success();
+
+    let guide_path = built.path("html/guide.html");
+    if guide_path.exists() {
+        let leaked = built.read("html/guide.html").contains("Real guide index");
+        panic!(
+            "expected no html/guide.html for an excluded landing file, but it exists; \
+             contains the excluded page's own marker (leaked): {leaked}"
+        );
+    }
+
+    assert!(
+        built.path("html/guide/a.html").exists(),
+        "excluding guide/index.typ must not take guide/a.typ down with it"
+    );
+    assert!(
+        built.path("html/intro.html").exists(),
+        "the root page (intro.typ) must be unaffected by an excluded landing file elsewhere"
+    );
+}
+
+/// A section that claims EVERY child of a directory strands the page
+/// `auto_index` would otherwise mint for it: that page must be withdrawn
+/// rather than published empty.
+#[test]
+fn test_spine_auto_index_stranded_by_section() {
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_stranded",
+        "spine_auto_index_stranded",
+        &["--html"],
+    )
+    .expect_success();
+
+    assert!(
+        !built.path("html/chapters.html").exists(),
+        "a synthesized index stranded by a section claiming all its children must be withdrawn"
+    );
+    assert!(
+        built.path("html/grouped/one.html").exists(),
+        "the section's regrouped output must still be produced"
+    );
+    assert!(
+        built.path("html/intro.html").exists(),
+        "the root page must be unaffected"
+    );
+}
+
+/// A section that claims only SOME of a directory's children leaves its
+/// synthesized index alone, now listing only the remainder.
+#[test]
+fn test_spine_auto_index_partial_section() {
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_partial",
+        "spine_auto_index_partial",
+        &["--html"],
+    )
+    .expect_success();
+
+    assert!(
+        built.path("html/chapters.html").exists(),
+        "a partially-claimed directory must keep its synthesized index"
+    );
+    let chapters = built.read("html/chapters.html");
+    assert!(
+        chapters.contains("two.html") || chapters.contains(">Two<"),
+        "chapters.html must still list the remaining child, two.typ:\n{chapters}"
+    );
+    assert!(
+        !chapters.contains("one.html") && !chapters.contains(">One<"),
+        "chapters.html must not list one.typ, which was moved into the section:\n{chapters}"
+    );
+    assert!(
+        built.path("html/grouped/one.html").exists(),
+        "the section's regrouped output must still be produced"
     );
 }

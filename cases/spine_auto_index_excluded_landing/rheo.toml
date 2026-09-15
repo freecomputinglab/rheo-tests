@@ -1,0 +1,8 @@
+version = "0.6.2"
+# `guide/` HAS a landing file (guide/index.typ), so auto_index has no absence
+# to fill: excluding that file must leave the directory with no page at all,
+# not replace it with a synthesized one.
+formats = ["html"]
+
+[spine]
+exclude = ["guide/index.typ"]

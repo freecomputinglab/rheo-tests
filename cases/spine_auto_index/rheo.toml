@@ -1,0 +1,7 @@
+version = "0.6.2"
+# Zero-config: `[spine] auto_index` is not mentioned at all, so its default
+# (true) is what's under test. `guide/` below has no `index.typ` or
+# `guide.typ` landing file, so instead of becoming a non-clickable group node
+# it should get a synthesized landing page whose whole body is a call to the
+# injected `rheo-index()`, listing its children as links.
+formats = ["html"]

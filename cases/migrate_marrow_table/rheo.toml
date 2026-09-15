@@ -1,0 +1,4 @@
+version = "0.6.2"
+formats = ["html"]
+marrow = "bundle-root.typ"
+dot_marrow_is_epilogue = false

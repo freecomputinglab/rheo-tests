@@ -1,0 +1,6 @@
+version = "0.6.2"
+# Zero-config: same index-less-directory layout as `cases/spine_auto_index`,
+# but built as a combined PDF rather than HTML. The synthesized `guide/`
+# landing page's `rheo-index()` call must emit real label links in the
+# combined document, not render nothing.
+formats = ["pdf"]

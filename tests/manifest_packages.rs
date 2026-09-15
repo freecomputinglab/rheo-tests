@@ -677,7 +677,7 @@ fn e2e_project_and_package_marrow_both_inline() {
     std::fs::write(
         project_path.join("rheo.toml"),
         format!(
-            "version = \"{}\"\nformats = [\"html\"]\nmarrow = \"bundle-root.typ\"\n",
+            "version = \"{}\"\nformats = [\"html\"]\n[marrow]\nfile = \"bundle-root.typ\"\n",
             manifest_version::CURRENT,
         ),
     )
