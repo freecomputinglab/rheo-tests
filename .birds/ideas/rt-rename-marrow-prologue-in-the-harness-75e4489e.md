@@ -6,7 +6,7 @@ priority: 4
 labels:
 - rename-marrow-table
 deps: []
-closed: false
+closed: true
 ---
 Touches: cases/marrow_names/content/.marrow.prelude.typ, cases/marrow_names/content/.marrow.prologue.typ, tests/harness.rs, cases/marrow_position_prologue/rheo.toml, cases/marrow_position_prologue/content/index.typ, cases/marrow_position_prologue/content/.marrow.typ, cases/migrate_marrow_table/rheo.toml, cases/migrate_marrow_table/main.typ
 

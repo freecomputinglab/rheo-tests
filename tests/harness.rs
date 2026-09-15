@@ -1542,6 +1542,58 @@ fn migrate_converts_vertebrae_to_exclude() {
     );
 }
 
+/// `rheo migrate --apply` converts the retired top-level `marrow` filename
+/// override and `dot_marrow_is_epilogue` boolean into a single `[marrow]`
+/// table with `file` and `position` keys. `dot_marrow_is_epilogue = false`
+/// means the bare marrow was a PROLOGUE, so it migrates to
+/// `position = "prologue"`.
+#[test]
+fn migrate_converts_marrow_table() {
+    let test_case = TestCase::new("cases/migrate_marrow_table");
+    let original_project_path = test_case.project_path();
+
+    let test_store = PathBuf::from("store").join("migrate_marrow_table");
+    if test_store.exists() {
+        std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
+    }
+    copy_project_to_test_store(original_project_path, &test_store)
+        .expect("Failed to copy project to test store");
+
+    let output = rheo_cli_command()
+        .args(["migrate", test_store.to_str().unwrap(), "--apply"])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .output()
+        .expect("Failed to run rheo migrate --apply");
+    assert!(
+        output.status.success(),
+        "migrate --apply failed:\nstderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+
+    let toml_after = std::fs::read_to_string(test_store.join("rheo.toml")).expect("read rheo.toml");
+    assert!(
+        toml_after.contains("[marrow]"),
+        "no [marrow] table added by migration:\n{toml_after}"
+    );
+    assert!(
+        toml_after.contains(r#"file = "bundle-root.typ""#),
+        "marrow filename override not migrated to [marrow] file:\n{toml_after}"
+    );
+    assert!(
+        toml_after.contains(r#"position = "prologue""#),
+        "dot_marrow_is_epilogue = false not migrated to [marrow] position = \"prologue\":\n{toml_after}"
+    );
+    assert!(
+        !toml_after.contains("dot_marrow_is_epilogue"),
+        "dot_marrow_is_epilogue key not removed by migration:\n{toml_after}"
+    );
+    assert!(
+        !toml_after.contains("marrow = \"bundle-root.typ\""),
+        "top-level marrow key not removed by migration:\n{toml_after}"
+    );
+}
+
 /// `rheo migrate --apply` reports and removes the retired `[spine] merge` key,
 /// in the global table and a per-format one alike. There is nothing to convert
 /// it into — PDF combines its spine, HTML and EPUB paginate — and left in place
@@ -2916,7 +2968,7 @@ fn test_spine_prelude() {
     );
 }
 
-/// `.marrow.prelude.typ` and `.marrow.epilogue.typ` are the explicit names, and
+/// `.marrow.prologue.typ` and `.marrow.epilogue.typ` are the explicit names, and
 /// either outranks a bare `.marrow.typ` — which is why the fixture's bare
 /// marrow, whose `asset()` would be plainly visible, emits nothing.
 #[test]
@@ -2927,14 +2979,33 @@ fn test_marrow_explicit_names_outrank_bare() {
     let index = built.read("html/index.html");
     assert!(
         index.contains("TOUCHED"),
-        ".marrow.prelude.typ did not reach the pre-existing vertebra:\n{index}"
+        ".marrow.prologue.typ did not reach the pre-existing vertebra:\n{index}"
     );
     assert!(
         !built.path("html/bare-marrow-ran.txt").exists(),
         ".marrow.typ ran despite an explicit marrow name being present"
     );
     assert!(
-        !built.path("html/.marrow.prelude.html").exists(),
-        ".marrow.prelude.typ was compiled as an ordinary vertebra"
+        !built.path("html/.marrow.prologue.html").exists(),
+        ".marrow.prologue.typ was compiled as an ordinary vertebra"
+    );
+}
+
+/// `[marrow] position = "prologue"` moves a BARE `.marrow.typ` to splice
+/// before the vertebra, so a `#show` rule in it reaches the vertebra's own
+/// markup — the default (`"epilogue"`) would not.
+#[test]
+fn test_marrow_position_prologue() {
+    let built = CompiledFixture::compile(
+        "cases/marrow_position_prologue",
+        "marrow_position_prologue",
+        &["--html"],
+    )
+    .expect_success();
+
+    let index = built.read("html/index.html");
+    assert!(
+        index.contains("MARROW-REACHED"),
+        "a prologue-positioned bare marrow did not reach the vertebra:\n{index}"
     );
 }
