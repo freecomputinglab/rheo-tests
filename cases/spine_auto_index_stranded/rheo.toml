@@ -1,0 +1,10 @@
+version = "0.6.2"
+formats = ["html"]
+
+# The section below claims every child of `chapters/` (there is only
+# `one.typ`), so the page `auto_index` would otherwise mint for `chapters/`
+# has nothing left to list once layering runs. That stranded page must be
+# withdrawn rather than published empty.
+[[spine.section]]
+name = "grouped"
+include = ["chapters/*.typ"]

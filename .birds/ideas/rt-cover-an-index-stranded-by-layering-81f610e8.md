@@ -7,7 +7,7 @@ labels:
 - fix-auto-index-stranded
 deps:
 - blocked-by:rt-cover-an-excluded-landing-file-4b998876
-closed: false
+closed: true
 ---
 Touches: cases/spine_auto_index_stranded/rheo.toml, cases/spine_auto_index_stranded/intro.typ, cases/spine_auto_index_stranded/chapters/one.typ, cases/spine_auto_index_partial/rheo.toml, cases/spine_auto_index_partial/intro.typ, cases/spine_auto_index_partial/chapters/one.typ, cases/spine_auto_index_partial/chapters/two.typ, tests/harness.rs
 

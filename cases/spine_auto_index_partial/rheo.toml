@@ -1,0 +1,9 @@
+version = "0.6.2"
+formats = ["html"]
+
+# The section below claims only `chapters/one.typ`, leaving `two.typ` behind.
+# `chapters/`'s synthesized index therefore survives, now listing only that
+# remainder rather than being withdrawn.
+[[spine.section]]
+name = "grouped"
+include = ["chapters/one.typ"]

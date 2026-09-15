@@ -3106,3 +3106,59 @@ fn test_spine_auto_index_excluded_landing() {
         "the root page (intro.typ) must be unaffected by an excluded landing file elsewhere"
     );
 }
+
+/// A section that claims EVERY child of a directory strands the page
+/// `auto_index` would otherwise mint for it: that page must be withdrawn
+/// rather than published empty.
+#[test]
+fn test_spine_auto_index_stranded_by_section() {
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_stranded",
+        "spine_auto_index_stranded",
+        &["--html"],
+    )
+    .expect_success();
+
+    assert!(
+        !built.path("html/chapters.html").exists(),
+        "a synthesized index stranded by a section claiming all its children must be withdrawn"
+    );
+    assert!(
+        built.path("html/grouped/one.html").exists(),
+        "the section's regrouped output must still be produced"
+    );
+    assert!(
+        built.path("html/intro.html").exists(),
+        "the root page must be unaffected"
+    );
+}
+
+/// A section that claims only SOME of a directory's children leaves its
+/// synthesized index alone, now listing only the remainder.
+#[test]
+fn test_spine_auto_index_partial_section() {
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_partial",
+        "spine_auto_index_partial",
+        &["--html"],
+    )
+    .expect_success();
+
+    assert!(
+        built.path("html/chapters.html").exists(),
+        "a partially-claimed directory must keep its synthesized index"
+    );
+    let chapters = built.read("html/chapters.html");
+    assert!(
+        chapters.contains("two.html") || chapters.contains(">Two<"),
+        "chapters.html must still list the remaining child, two.typ:\n{chapters}"
+    );
+    assert!(
+        !chapters.contains("one.html") && !chapters.contains(">One<"),
+        "chapters.html must not list one.typ, which was moved into the section:\n{chapters}"
+    );
+    assert!(
+        built.path("html/grouped/one.html").exists(),
+        "the section's regrouped output must still be produced"
+    );
+}
