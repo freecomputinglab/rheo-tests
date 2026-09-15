@@ -6,7 +6,7 @@ priority: 3
 labels:
 - fix-spine-flat-synthesized
 deps: []
-closed: false
+closed: true
 ---
 WRITE THIS TEST FIRST. It is the red half of a two-repo change: it fails
 against rheo as this branch's engine stands, and passes once rheo serializes a
