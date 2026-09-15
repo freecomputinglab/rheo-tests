@@ -6,7 +6,7 @@ priority: 3
 labels:
 - fix-merged-imports-ref
 deps: []
-closed: false
+closed: true
 ---
 
 The one compat fixture's PDF reference predates `auto_index`, so the suite is red.
