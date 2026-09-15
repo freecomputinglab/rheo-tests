@@ -7,7 +7,7 @@ labels:
 - fix-prelude-scan-exclude
 deps:
 - blocked-by:rt-rename-marrow-prologue-in-the-harness-75e4489e
-closed: false
+closed: true
 ---
 Touches: cases/spine_prelude/rheo.toml, tests/harness.rs, ref/examples/spine_prelude
 

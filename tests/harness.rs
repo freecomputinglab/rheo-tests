@@ -2961,10 +2961,21 @@ fn test_spine_prelude() {
         "a nested vertebra got the wrong handle:\n{nested}"
     );
 
-    // The prelude is excluded from the spine, so it mints no page of its own.
+    assert!(built.path("html/index.html").exists(), "the root page went missing");
+    assert!(built.path("html/deep/nested.html").exists(), "the nested page went missing");
+
+    // rheo excludes the prelude's own path from the spine scan (the project's
+    // rheo.toml sets no exclude of its own), so it mints no page of its own.
     assert!(
         !built.path("html/_lib/prelude.html").exists(),
         "the prelude was compiled as an ordinary vertebra"
+    );
+    // A consequence of the above, not something enforced directly: once the
+    // prelude is excluded, `_lib/` has no remaining children, so the scan
+    // drops the directory node instead of synthesizing a landing page for it.
+    assert!(
+        !built.path("html/_lib.html").exists(),
+        "the prelude's own directory got a synthesized index page"
     );
 }
 
