@@ -3020,3 +3020,37 @@ fn test_marrow_position_prologue() {
         "a prologue-positioned bare marrow did not reach the vertebra:\n{index}"
     );
 }
+
+/// A synthesized directory index (`auto_index`) must render its children in
+/// the combined PDF too, as label links, and not silently come out blank.
+#[test]
+fn test_spine_auto_index_pdf_links() {
+    use lopdf::Document;
+
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_pdf",
+        "spine_auto_index_pdf",
+        &["--pdf"],
+    )
+    .expect_success();
+    let pdf_path = built.path("pdf/spine_auto_index_pdf.pdf");
+    assert!(pdf_path.exists(), "PDF not created at {pdf_path:?}");
+
+    let doc = Document::load(&pdf_path).expect("load combined PDF");
+    let total_annots: usize = doc
+        .get_pages()
+        .values()
+        .map(|&id| {
+            doc.get_dictionary(id)
+                .ok()
+                .and_then(|page| page.get(b"Annots").ok())
+                .and_then(|annots| annots.as_array().ok())
+                .map_or(0, |a| a.len())
+        })
+        .sum();
+
+    assert!(
+        total_annots >= 2,
+        "expected at least 2 link annotations (one per child of guide/), got {total_annots}"
+    );
+}

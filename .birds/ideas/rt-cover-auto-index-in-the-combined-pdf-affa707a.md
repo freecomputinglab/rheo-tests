@@ -7,7 +7,7 @@ labels:
 - fix-rheo-index-handle
 deps:
 - blocked-by:rt-cover-the-prelude-auto-exclusion-f5aa977b
-closed: false
+closed: true
 ---
 Touches: cases/spine_auto_index_pdf/rheo.toml, cases/spine_auto_index_pdf/intro.typ, cases/spine_auto_index_pdf/guide/a.typ, cases/spine_auto_index_pdf/guide/b.typ, tests/harness.rs
 
