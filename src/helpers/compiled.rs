@@ -12,17 +12,22 @@ use rheo_core::config::manifest_version;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-/// An isolated `store/<name>` directory, removed on drop — so a panicking
-/// assertion cannot leak it into the next run, which a cleanup call at the end
-/// of a test body cannot promise.
+/// An isolated `target/test-store/<name>` directory, removed on drop — so a
+/// panicking assertion cannot leak it into the next run, which a cleanup call
+/// at the end of a test body cannot promise.
+///
+/// Lives under `target/`, not `store/`: `store/` holds only the committed
+/// compat fixtures a test copies *from*, and `target/` is already
+/// gitignored wholesale, so scratch a test copies projects *into* can never
+/// be mistaken for a fixture or land in a commit.
 pub struct TestStore {
     path: PathBuf,
 }
 
 impl TestStore {
-    /// An empty `store/<name>`, clearing anything a previous run left.
+    /// An empty `target/test-store/<name>`, clearing anything a previous run left.
     pub fn fresh(name: &str) -> Self {
-        let path = PathBuf::from("store").join(name);
+        let path = PathBuf::from("target/test-store").join(name);
         if path.exists() {
             std::fs::remove_dir_all(&path).expect("clean test store");
         }

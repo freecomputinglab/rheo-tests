@@ -290,7 +290,7 @@ fn test_pdf_merge() {
     let original_project_path = test_case.project_path();
 
     // Create isolated test store
-    let test_store = PathBuf::from("store").join(test_name);
+    let test_store = PathBuf::from("target/test-store").join(test_name);
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -873,7 +873,7 @@ fn test_copy_glob_brace_alternation_matches_watch_engine() {
 /// Test that `rheo init` creates a valid project that compiles successfully
 #[test]
 fn test_rheo_init_and_compile() {
-    let test_dir = PathBuf::from("store/init_project");
+    let test_dir = PathBuf::from("target/test-store/init_project");
 
     // Clean previous test artifacts
     if test_dir.exists() {
@@ -1387,7 +1387,7 @@ fn migrate_rewrites_links() {
     let original_project_path = test_case.project_path();
 
     // Migrate mutates the project in place, so operate on an isolated copy.
-    let test_store = PathBuf::from("store").join("migrate_link_syntax");
+    let test_store = PathBuf::from("target/test-store").join("migrate_link_syntax");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1434,7 +1434,7 @@ fn migrate_rewrites_target() {
     let original_project_path = test_case.project_path();
 
     // Migrate mutates the project in place, so operate on an isolated copy.
-    let test_store = PathBuf::from("store").join("migrate_target_syntax");
+    let test_store = PathBuf::from("target/test-store").join("migrate_target_syntax");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1487,7 +1487,7 @@ fn migrate_converts_vertebrae_to_exclude() {
     let test_case = TestCase::new("cases/migrate_vertebrae_exclude");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_vertebrae_exclude");
+    let test_store = PathBuf::from("target/test-store").join("migrate_vertebrae_exclude");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1552,7 +1552,7 @@ fn migrate_converts_marrow_table() {
     let test_case = TestCase::new("cases/migrate_marrow_table");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_marrow_table");
+    let test_store = PathBuf::from("target/test-store").join("migrate_marrow_table");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1603,7 +1603,7 @@ fn migrate_drops_the_retired_merge_key() {
     let test_case = TestCase::new("cases/migrate_merge_removal");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_merge_removal");
+    let test_store = PathBuf::from("target/test-store").join("migrate_merge_removal");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1668,7 +1668,7 @@ fn migrate_reports_removed_feed_surface() {
     let test_case = TestCase::new("cases/migrate_feed_removal");
     let original_project_path = test_case.project_path();
 
-    let test_store = PathBuf::from("store").join("migrate_feed_removal");
+    let test_store = PathBuf::from("target/test-store").join("migrate_feed_removal");
     if test_store.exists() {
         std::fs::remove_dir_all(&test_store).expect("Failed to clean test store");
     }
@@ -1754,7 +1754,7 @@ fn migrate_reports_removed_feed_surface() {
 #[test]
 fn test_default_css_is_linked_asset() {
     let project = "cases/default_css_linked";
-    let build_dir = PathBuf::from("store").join("default_css_linked_build");
+    let build_dir = PathBuf::from("target/test-store").join("default_css_linked_build");
     let _ = std::fs::remove_dir_all(&build_dir);
 
     let output = rheo_cli_command()
@@ -2263,7 +2263,7 @@ fn test_nested_marrow_file_warns() {
 #[test]
 fn test_package_assets_depth_relative_on_nested_pages() {
     let project = "cases/package_asset_nested";
-    let build_dir = PathBuf::from("store").join("package_asset_nested_build");
+    let build_dir = PathBuf::from("target/test-store").join("package_asset_nested_build");
     let _ = std::fs::remove_dir_all(&build_dir);
 
     let output = rheo_cli_command()

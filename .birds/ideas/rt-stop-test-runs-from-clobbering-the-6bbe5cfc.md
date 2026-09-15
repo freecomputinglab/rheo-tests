@@ -6,7 +6,7 @@ priority: 4
 labels:
 - fix-store-hygiene
 deps: []
-closed: false
+closed: true
 ---
 
 Running the migrate tests deletes committed fixtures and tracks scratch output.
