@@ -3074,3 +3074,35 @@ fn test_spine_real_index_title_stays_index() {
         "a real guide/index.typ must keep its stem-derived title 'Index':\n{guide}"
     );
 }
+
+/// `auto_index` fills an ABSENCE, never an EXCLUSION: when a directory's
+/// landing file exists but is excluded via `[spine] exclude`, the directory
+/// must become a non-clickable group node (no page at all) rather than have
+/// `auto_index` mint a synthesized replacement at the same output path.
+#[test]
+fn test_spine_auto_index_excluded_landing() {
+    let built = CompiledFixture::compile(
+        "cases/spine_auto_index_excluded_landing",
+        "spine_auto_index_excluded_landing",
+        &["--html"],
+    )
+    .expect_success();
+
+    let guide_path = built.path("html/guide.html");
+    if guide_path.exists() {
+        let leaked = built.read("html/guide.html").contains("Real guide index");
+        panic!(
+            "expected no html/guide.html for an excluded landing file, but it exists; \
+             contains the excluded page's own marker (leaked): {leaked}"
+        );
+    }
+
+    assert!(
+        built.path("html/guide/a.html").exists(),
+        "excluding guide/index.typ must not take guide/a.typ down with it"
+    );
+    assert!(
+        built.path("html/intro.html").exists(),
+        "the root page (intro.typ) must be unaffected by an excluded landing file elsewhere"
+    );
+}

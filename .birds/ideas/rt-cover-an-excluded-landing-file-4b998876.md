@@ -7,7 +7,7 @@ labels:
 - fix-auto-index-exclusion
 deps:
 - blocked-by:rt-cover-auto-index-in-the-combined-pdf-affa707a
-closed: false
+closed: true
 ---
 Touches: cases/spine_auto_index_excluded_landing/rheo.toml, cases/spine_auto_index_excluded_landing/intro.typ, cases/spine_auto_index_excluded_landing/guide/index.typ, cases/spine_auto_index_excluded_landing/guide/a.typ, tests/harness.rs
 
