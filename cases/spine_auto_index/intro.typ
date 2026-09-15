@@ -19,6 +19,7 @@ Handle: #rheo-context().handle
   let minted = ctx.spine-flat.filter(v => v.path == "guide/index.typ")
   assert(minted.len() == 1, message: "expected exactly one minted guide/index.typ entry, got " + str(minted.len()))
   assert(minted.first().synthesized == true, message: "minted guide/index.typ must have synthesized == true")
+  assert(minted.first().title == "Guide", message: "minted guide/index.typ must be titled 'Guide', got " + repr(minted.first().title))
 
   for p in ("intro.typ", "guide/a.typ", "guide/b.typ") {
     let entries = ctx.spine-flat.filter(v => v.path == p)

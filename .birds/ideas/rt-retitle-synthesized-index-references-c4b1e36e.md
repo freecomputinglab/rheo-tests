@@ -8,7 +8,7 @@ labels:
 deps:
 - blocked-by:rt-covers-synthesized-spine-entries-0858b140
 - blocked-by:rt-rename-marrow-prologue-in-the-harness-75e4489e
-closed: false
+closed: true
 ---
 Touches: ref/examples/spine_auto_index/html/guide.html, ref/examples/spine_auto_index_override/html/guide.html, cases/spine_auto_index/intro.typ, cases/spine_real_index_title/rheo.toml, cases/spine_real_index_title/intro.typ, cases/spine_real_index_title/guide/index.typ, cases/spine_real_index_title/guide/a.typ, tests/harness.rs
 

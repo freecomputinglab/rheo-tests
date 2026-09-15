@@ -1,0 +1,5 @@
+version = "0.6.2"
+# guide/ HAS a landing file (index.typ), so `auto_index` mints nothing there.
+# The page's title stays stem-derived ("Index") rather than becoming the
+# prettified directory name ("Guide").
+formats = ["html"]

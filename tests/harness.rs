@@ -3054,3 +3054,23 @@ fn test_spine_auto_index_pdf_links() {
         "expected at least 2 link annotations (one per child of guide/), got {total_annots}"
     );
 }
+
+/// A real, author-written `index.typ` is not `auto_index`'s business: its
+/// title comes from its own stem ("Index"), never from its parent directory's
+/// name. Only a SYNTHESIZED landing page (no `index.typ`/`<dirname>.typ` on
+/// disk) takes the prettified directory name.
+#[test]
+fn test_spine_real_index_title_stays_index() {
+    let built = CompiledFixture::compile(
+        "cases/spine_real_index_title",
+        "spine_real_index_title",
+        &["--html"],
+    )
+    .expect_success();
+
+    let guide = built.read("html/guide.html");
+    assert!(
+        guide.contains("<title>Index</title>"),
+        "a real guide/index.typ must keep its stem-derived title 'Index':\n{guide}"
+    );
+}
