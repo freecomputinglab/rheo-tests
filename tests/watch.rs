@@ -13,13 +13,9 @@ use std::fs;
 /// deliberate, permanent difference from a static compile. Strip it before
 /// comparing served bytes to `rheo compile` output.
 fn strip_live_reload_script(served: &str) -> String {
-    const START: &str = "\n<script>\nconst eventSource = new EventSource";
-    let start = served.find(START).expect("live-reload script present");
-    let end = served[start..]
-        .find("</script>\n")
-        .map(|i| start + i + "</script>\n".len())
-        .expect("live-reload script closes");
-    format!("{}{}", &served[..start], &served[end..])
+    const TAG: &str = r#"<script src="/.rheo/live.js"></script>"#;
+    assert!(served.contains(TAG), "live-reload script present");
+    served.replacen(TAG, "", 1)
 }
 
 /// Parity check for rheo bead `rheo-head-hoist-watch-mhp`: `rheo watch` must
