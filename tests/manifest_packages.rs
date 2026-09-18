@@ -1061,3 +1061,264 @@ fn min_version_misplaced_under_format_subtable_is_not_read() {
         "misplaced min_version should be silently ignored, not enforced"
     );
 }
+
+/// Slice out the `<script ...>` opening tag whose attributes mention `needle`
+/// (e.g. a script `src` path), so an assertion can inspect that one tag's
+/// attributes rather than a bare substring match across the whole document.
+fn script_tag_containing<'a>(html: &'a str, needle: &str) -> &'a str {
+    let needle_pos = html
+        .find(needle)
+        .unwrap_or_else(|| panic!("expected to find {needle:?} in HTML:\n{html}"));
+    let tag_start = html[..needle_pos]
+        .rfind("<script")
+        .unwrap_or_else(|| panic!("no <script tag precedes {needle:?} in HTML:\n{html}"));
+    let tag_end = html[tag_start..]
+        .find('>')
+        .map(|i| tag_start + i + 1)
+        .unwrap_or_else(|| panic!("unterminated <script tag for {needle:?} in HTML:\n{html}"));
+    &html[tag_start..tag_end]
+}
+
+/// E2e test: a package declaring `js_rehydrate = true` in its
+/// `[tool.rheo.html]` block gets `data-rheo-rehydrate` stamped on its own
+/// `<script>` tag, and only its own — a sibling package with no such key
+/// compiled into the same page carries no such attribute.
+#[test]
+fn e2e_js_rehydrate_stamps_the_script_tag() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    let packages_root = cache_dir.path().join("typst/packages");
+
+    let rehydrate_pkg = FakePackage::new(&packages_root, "@e2ens/rehydratepkg:0.1.0");
+    let rehydrate_pkg_dir = rehydrate_pkg.root().to_path_buf();
+    std::fs::write(
+        rehydrate_pkg_dir.join("typst.toml"),
+        r#"
+[package]
+name = "rehydratepkg"
+version = "0.1.0"
+entrypoint = "lib.typ"
+
+[tool.rheo.html]
+js_scripts = "pkg-script.js"
+js_rehydrate = true
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        rehydrate_pkg_dir.join("pkg-script.js"),
+        "console.log('rehydrate');",
+    )
+    .unwrap();
+    std::fs::write(rehydrate_pkg_dir.join("lib.typ"), "").unwrap();
+
+    let plain_pkg = FakePackage::new(&packages_root, "@e2ens/plainpkg:0.1.0");
+    let plain_pkg_dir = plain_pkg.root().to_path_buf();
+    std::fs::write(
+        plain_pkg_dir.join("typst.toml"),
+        r#"
+[package]
+name = "plainpkg"
+version = "0.1.0"
+entrypoint = "lib.typ"
+
+[tool.rheo.html]
+js_scripts = "pkg-script.js"
+"#,
+    )
+    .unwrap();
+    std::fs::write(plain_pkg_dir.join("pkg-script.js"), "console.log('plain');").unwrap();
+    std::fs::write(plain_pkg_dir.join("lib.typ"), "").unwrap();
+
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@e2ens/rehydratepkg:0.1.0": *
+#import "@e2ens/plainpkg:0.1.0": *
+= Hello
+Test document.
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            manifest_version::CURRENT,
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .env("XDG_CACHE_HOME", cache_dir.path())
+        .env("XDG_DATA_HOME", cache_dir.path().join("data"))
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let html = std::fs::read_to_string(build_dir.join("html/main.html"))
+        .expect("Failed to read HTML output");
+
+    let rehydrate_tag = script_tag_containing(&html, "e2ens/rehydratepkg/pkg-script.js");
+    assert!(
+        rehydrate_tag.contains("data-rheo-rehydrate"),
+        "rehydrate package's <script> tag should carry data-rheo-rehydrate:\n{rehydrate_tag}"
+    );
+
+    let plain_tag = script_tag_containing(&html, "e2ens/plainpkg/pkg-script.js");
+    assert!(
+        !plain_tag.contains("data-rheo-rehydrate"),
+        "plain package's <script> tag should not carry data-rheo-rehydrate:\n{plain_tag}"
+    );
+}
+
+/// E2e test: a package that itself imports another package contributes that
+/// second package's assets, even though the project never imports the second
+/// package directly (`scan_transitive_package_imports` in
+/// `crates/core/src/packages/manifest.rs`).
+#[test]
+fn e2e_transitive_package_assets_are_collected() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let project_dir = tempfile::tempdir().unwrap();
+    let project_path = project_dir.path();
+
+    let packages_root = cache_dir.path().join("typst/packages");
+
+    let leaf_pkg = FakePackage::new(&packages_root, "@e2ens/leafpkg:0.1.0");
+    let leaf_pkg_dir = leaf_pkg.root().to_path_buf();
+    std::fs::write(
+        leaf_pkg_dir.join("typst.toml"),
+        r#"
+[package]
+name = "leafpkg"
+version = "0.1.0"
+entrypoint = "lib.typ"
+
+[tool.rheo.html]
+css_stylesheet = "leaf.css"
+js_scripts = "leaf.js"
+"#,
+    )
+    .unwrap();
+    std::fs::write(leaf_pkg_dir.join("leaf.css"), "body { color: green; }").unwrap();
+    std::fs::write(leaf_pkg_dir.join("leaf.js"), "console.log('leaf');").unwrap();
+    std::fs::write(leaf_pkg_dir.join("lib.typ"), "").unwrap();
+
+    let root_pkg = FakePackage::new(&packages_root, "@e2ens/rootpkg:0.1.0");
+    let root_pkg_dir = root_pkg.root().to_path_buf();
+    std::fs::write(
+        root_pkg_dir.join("typst.toml"),
+        r#"
+[package]
+name = "rootpkg"
+version = "0.1.0"
+entrypoint = "lib.typ"
+
+[tool.rheo.html]
+css_stylesheet = "root.css"
+js_scripts = "root.js"
+"#,
+    )
+    .unwrap();
+    std::fs::write(root_pkg_dir.join("root.css"), "body { color: red; }").unwrap();
+    std::fs::write(root_pkg_dir.join("root.js"), "console.log('root');").unwrap();
+    std::fs::write(
+        root_pkg_dir.join("lib.typ"),
+        "#import \"@e2ens/leafpkg:0.1.0\": *\n",
+    )
+    .unwrap();
+
+    // The project imports only rootpkg — leafpkg is reached transitively,
+    // through rootpkg's own lib.typ.
+    std::fs::write(
+        project_path.join("main.typ"),
+        r#"#import "@e2ens/rootpkg:0.1.0": *
+= Hello
+Test document.
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        project_path.join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            manifest_version::CURRENT,
+        ),
+    )
+    .unwrap();
+
+    let build_dir = project_path.join("build");
+
+    let output = rheo_cli_command()
+        .args([
+            "compile",
+            project_path.to_str().unwrap(),
+            "--html",
+            "--build-dir",
+            build_dir.to_str().unwrap(),
+        ])
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+        .env("XDG_CACHE_HOME", cache_dir.path())
+        .env("XDG_DATA_HOME", cache_dir.path().join("data"))
+        .output()
+        .expect("Failed to run rheo compile");
+
+    assert!(
+        output.status.success(),
+        "Compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // leafpkg's assets land in the build even though the project never
+    // imported it directly — only rootpkg pulled it in.
+    assert!(
+        build_dir.join("html/e2ens/leafpkg/leaf.css").exists(),
+        "transitive package CSS not found at html/e2ens/leafpkg/leaf.css"
+    );
+    assert!(
+        build_dir.join("html/e2ens/leafpkg/leaf.js").exists(),
+        "transitive package JS not found at html/e2ens/leafpkg/leaf.js"
+    );
+
+    let html = std::fs::read_to_string(build_dir.join("html/main.html"))
+        .expect("Failed to read HTML output");
+
+    let root_needle = "e2ens/rootpkg/root.js";
+    let leaf_needle = "e2ens/leafpkg/leaf.js";
+    assert!(
+        html.contains(root_needle) && html.contains(leaf_needle),
+        "HTML should reference both root and leaf scripts:\n{html}"
+    );
+
+    // Order: the project's own specs come first, encounter order otherwise —
+    // a transitively-reached package must not jump ahead of one the project
+    // imported directly.
+    let root_pos = html
+        .find(root_needle)
+        .expect("root script src should be present");
+    let leaf_pos = html
+        .find(leaf_needle)
+        .expect("leaf script src should be present");
+    assert!(
+        root_pos < leaf_pos,
+        "root package's <script> should appear before leaf's:\n{html}"
+    );
+}

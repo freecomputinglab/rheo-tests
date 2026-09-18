@@ -10,10 +10,12 @@ use std::fs;
 
 /// The dev server always injects a live-reload `<script>` immediately before
 /// `</body>` (`crates/html/src/server.rs::inject_live_reload_script`) — a
-/// deliberate, permanent difference from a static compile. Strip it before
-/// comparing served bytes to `rheo compile` output.
+/// deliberate, permanent difference from a static compile. It carries a bare
+/// `data-rheo-live` attribute so the client can skip it in its own
+/// morph-safety survey. Strip it before comparing served bytes to
+/// `rheo compile` output.
 fn strip_live_reload_script(served: &str) -> String {
-    const TAG: &str = r#"<script src="/.rheo/live.js"></script>"#;
+    const TAG: &str = r#"<script src="/.rheo/live.js" data-rheo-live></script>"#;
     assert!(served.contains(TAG), "live-reload script present");
     served.replacen(TAG, "", 1)
 }
