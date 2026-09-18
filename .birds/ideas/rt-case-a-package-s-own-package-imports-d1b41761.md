@@ -6,7 +6,7 @@ priority: 2
 labels:
 - feat-rehydrate-optimization
 deps: []
-closed: false
+closed: true
 ---
 `rheo` PR #179 adds `scan_transitive_package_imports` in
 `crates/core/src/packages/manifest.rs`: asset collection now follows an
