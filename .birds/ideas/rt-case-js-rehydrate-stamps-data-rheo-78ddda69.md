@@ -6,7 +6,7 @@ priority: 3
 labels:
 - feat-rehydrate-optimization
 deps: []
-closed: false
+closed: true
 ---
 `rheo` PR #179 adds a package-manifest opt-in: a package that declares
 `js_rehydrate = true` in its `[tool.rheo.<format>]` block gets its `<script>`
