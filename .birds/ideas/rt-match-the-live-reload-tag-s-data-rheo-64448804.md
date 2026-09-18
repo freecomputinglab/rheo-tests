@@ -6,7 +6,7 @@ priority: 4
 labels:
 - feat-rehydrate-optimization
 deps: []
-closed: false
+closed: true
 ---
 `rheo` PR #179 (`feat/rehydrate-optimization`) fails CI on this repo's `tests/watch.rs`:
 
