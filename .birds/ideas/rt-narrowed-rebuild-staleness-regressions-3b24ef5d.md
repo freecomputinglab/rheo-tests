@@ -7,7 +7,7 @@ labels:
 - test-watch-narrow
 deps:
 - blocked-by:rt-narrowed-rebuild-harness-5c59db1c
-closed: false
+closed: true
 ---
 Touches: cases/watch_narrow_regressions/ (new), tests/watch_narrow_regressions.rs (new)
 
