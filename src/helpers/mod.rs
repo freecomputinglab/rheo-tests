@@ -8,6 +8,7 @@ pub mod narrow;
 pub mod project;
 pub mod reference;
 pub mod remote;
+pub mod scenario;
 pub mod test_store;
 
 /// Determines if a test path represents a single .typ file

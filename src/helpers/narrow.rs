@@ -38,17 +38,45 @@ pub fn fresh_compile_html(project: &Path) -> tempfile::TempDir {
 /// its output (normalised to a placeholder before comparing, since the two
 /// trees necessarily live at different tempdir paths).
 pub fn assert_html_trees_equal(actual: &Path, expected: &Path) {
+    let diffs = html_tree_diffs(actual, expected);
+    assert!(
+        diffs.is_empty(),
+        "{} and {} differ:\n{}",
+        actual.display(),
+        expected.display(),
+        diffs.join("\n\n")
+    );
+}
+
+/// Upper bound on a single entry's unified-diff body in [`html_tree_diffs`].
+const MAX_DIFF_LINES: usize = 40;
+
+/// One human-readable entry per file that differs, is missing from `actual`,
+/// or is extra in `actual`, relative to `expected` — a non-panicking sibling
+/// of [`assert_html_trees_equal`] for a caller (e.g. a scenario step) that
+/// wants to keep comparing other things rather than stop at the first
+/// mismatch.
+pub fn html_tree_diffs(actual: &Path, expected: &Path) -> Vec<String> {
     let actual_paths = relative_file_paths(actual);
     let expected_paths = relative_file_paths(expected);
-    assert_eq!(
-        actual_paths,
-        expected_paths,
-        "{} and {} do not hold the same set of files",
-        actual.display(),
-        expected.display()
-    );
+
+    let mut diffs = Vec::new();
+
+    for rel in &expected_paths {
+        if !actual_paths.contains(rel) {
+            diffs.push(format!("{rel}: missing from actual"));
+        }
+    }
+    for rel in &actual_paths {
+        if !expected_paths.contains(rel) {
+            diffs.push(format!("{rel}: extra in actual (not in expected)"));
+        }
+    }
 
     for rel in &actual_paths {
+        if !expected_paths.contains(rel) {
+            continue;
+        }
         let actual_bytes = fs::read(actual.join(rel))
             .unwrap_or_else(|e| panic!("read {}: {e}", actual.join(rel).display()));
         let expected_bytes = fs::read(expected.join(rel))
@@ -59,15 +87,19 @@ pub fn assert_html_trees_equal(actual: &Path, expected: &Path) {
             normalize_tempdir_path(&String::from_utf8_lossy(&expected_bytes), expected);
 
         if actual_text != expected_text {
-            let diff = TextDiff::from_lines(&expected_text, &actual_text)
+            let diff: String = TextDiff::from_lines(&expected_text, &actual_text)
                 .unified_diff()
                 .header("expected", "actual")
-                .to_string();
-            panic!(
-                "{rel} differs between a watch session's disk output and a fresh compile:\n{diff}"
-            );
+                .to_string()
+                .lines()
+                .take(MAX_DIFF_LINES)
+                .collect::<Vec<_>>()
+                .join("\n");
+            diffs.push(format!("{rel}:\n{diff}"));
         }
     }
+
+    diffs
 }
 
 /// Every relative file path under `root`, sorted for a stable comparison.

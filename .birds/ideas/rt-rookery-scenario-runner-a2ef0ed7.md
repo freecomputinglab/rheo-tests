@@ -7,7 +7,7 @@ labels:
 - test-watch-narrow
 deps:
 - blocked-by:rt-narrowed-rebuild-harness-5c59db1c
-closed: false
+closed: true
 ---
 Touches: src/helpers/scenario.rs (new), src/helpers/narrow.rs, src/helpers/mod.rs, cases/watch_narrow_rookery/ (new), tests/watch_narrow_rookery_smoke.rs (new)
 
