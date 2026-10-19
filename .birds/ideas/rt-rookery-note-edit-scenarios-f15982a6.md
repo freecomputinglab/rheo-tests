@@ -7,7 +7,7 @@ labels:
 - test-watch-narrow
 deps:
 - blocked-by:rt-rookery-scenario-runner-a2ef0ed7
-closed: false
+closed: true
 ---
 Touches: tests/watch_narrow_rookery_notes.rs (new)
 
