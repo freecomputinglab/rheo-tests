@@ -7,7 +7,7 @@ labels:
 - test-watch-narrow
 deps:
 - blocked-by:rt-make-a-bd-flight-able-to-build-against-8eacf3bf
-closed: false
+closed: true
 ---
 Touches: src/helpers/devserver.rs, src/helpers/narrow.rs (new), src/helpers/mod.rs, cases/watch_narrow/ (new: rheo.toml, a.typ, b.typ, c.typ), tests/watch_narrow.rs (new)
 

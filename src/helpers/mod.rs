@@ -4,6 +4,7 @@ pub mod compiled;
 pub mod devserver;
 pub mod fixtures;
 pub mod markers;
+pub mod narrow;
 pub mod project;
 pub mod reference;
 pub mod remote;

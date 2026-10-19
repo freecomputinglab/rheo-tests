@@ -1,0 +1,4 @@
+formats = ["html"]
+
+[watch]
+narrow = true
