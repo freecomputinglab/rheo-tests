@@ -32,3 +32,11 @@ CARGO_TARGET_DIR=<nest>/target RHEO_MANIFEST=../rheo/Cargo.toml \
 Reusing the nest's `CARGO_TARGET_DIR` instead of letting the flight compile
 its own target dir brings a cold flight build down to ~29s by reusing the
 nest's already-compiled typst dependencies.
+
+## Browser testing
+
+Browser testing is always in Chrome (`chromium` on this machine), never
+Firefox or whatever the desktop default is. rheo's `--open` goes through the
+`webbrowser` crate, which honours `$BROWSER`, so set `BROWSER=chromium` for
+any run that opens a page; screenshots, devtools and headless checks of served
+HTML use `chromium` too.
