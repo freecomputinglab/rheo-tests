@@ -59,6 +59,7 @@ impl DevServer {
             .arg("--open")
             .args(extra_args)
             .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+            .env("BROWSER", "chromium")
             .env("RUST_LOG", "rheo=info,rheo_html=info,rheo_core=info")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
