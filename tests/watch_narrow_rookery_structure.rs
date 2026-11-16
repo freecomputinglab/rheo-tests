@@ -3,8 +3,7 @@
 //! multi-file edits, and a full revert-to-start round trip. These change the
 //! project's STRUCTURE rather than one note's content, which is where state
 //! left over from an earlier rebuild can leak into a later one. Only
-//! `add_and_remove_pages` is still ignored (flaky: deleting a page leaves its
-//! minted `ideas/<id>.html` on disk); see its `#[ignore]` reason.
+//! `add_and_remove_pages` is still ignored, as flaky; see its `#[ignore]` reason.
 
 use rheo_tests::helpers::narrow::html_tree_diffs;
 use rheo_tests::helpers::scenario::{Expect, Scenario, Step, rookery_setup};
@@ -36,7 +35,7 @@ const N13_V2: &str = "#import \"../lib.typ\": demo\n\
 ]\n";
 
 #[test]
-#[ignore = "rheo: flaky (about 2/3 fail): deleting page n13 (full rebuild) leaves ideas/n13a.html on disk (extra in actual)"]
+#[ignore = "rheo: flaky (about 1 in 12 runs fails, cause not captured); the ghost ideas/n13a.html no longer appears"]
 fn add_and_remove_pages() {
     let scenario = Scenario {
         name: "add_and_remove_pages",

@@ -1,14 +1,11 @@
 //! Scripted sequences of realistic note edits on the `watch_narrow_rookery`
 //! fixture, each step checked against a fresh full compile (see
-//! `src/helpers/scenario.rs`). All need a `../rookery` checkout. Two are still
-//! ignored because a narrowed rebuild leaves the minted `ideas/<id>.html` of a
-//! deleted or renamed idea on disk; see each `#[ignore]` reason.
+//! `src/helpers/scenario.rs`). All need a `../rookery` checkout.
 
 use rheo_tests::helpers::scenario::{Expect, Scenario, Step, rookery_setup};
 use std::fs;
 
 #[test]
-#[ignore = "rheo: deleting n07a's idea call in a narrowed rebuild leaves ideas/n07a.html on disk (extra in actual) (fails 3/3)"]
 fn note_lifecycle() {
     // n07a has no inbound @idea:/#window references from any other page, so
     // deleting its idea call (below) doesn't break an unrelated page's link —
@@ -218,7 +215,6 @@ fn note_moves_between_pages() {
 }
 
 #[test]
-#[ignore = "rheo: after renaming n09a to n09z, narrowed rebuild leaves ideas/n09a.html on disk (extra in actual), also after the following body edit (fails 3/3)"]
 fn rename_note_id() {
     let scenario = Scenario {
         name: "rename_note_id",
