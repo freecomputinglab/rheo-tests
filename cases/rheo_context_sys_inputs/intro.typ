@@ -1,10 +1,11 @@
 // sys.inputs.rheo-context: packages detect a rheo build without tripping the
 // unbound-variable trap on the per-file `#let rheo-context()`. sys.inputs carries
-// only the global spine (no handle); the handle comes from the per-file #let.
+// only global data (no handle; the spine on rheo-spine); the handle comes from
+// the per-file #let.
 
 Detected: #("rheo-context" in sys.inputs)
 
-Sys spine pages: #sys.inputs.rheo-context.spine-flat.len()
+Sys spine pages: #sys.inputs.rheo-spine.get("spine-flat").len()
 
 Guarded handle: #(if "rheo-context" in sys.inputs { rheo-context().handle } else { "native" })
 
@@ -55,8 +56,10 @@ Guarded handle: #(if "rheo-context" in sys.inputs { rheo-context().handle } else
   let s = sys.inputs.rheo-context
   assert(type(s) == dictionary, message: "sys.inputs.rheo-context must be dict")
   assert("handle" not in s, message: "sys.inputs.rheo-context must NOT carry per-file handle")
-  assert(s.spine == ctx.spine, message: "sys.inputs spine must equal rheo-context().spine")
-  assert(s.spine-flat == ctx.spine-flat, message: "sys.inputs spine-flat must equal rheo-context().spine-flat")
+  assert("spine" not in s and "spine-flat" not in s, message: "the spine lives on sys.inputs.rheo-spine, not rheo-context")
+  let store = sys.inputs.rheo-spine
+  assert(store.get("spine") == ctx.spine, message: "rheo-spine spine must equal rheo-context().spine")
+  assert(store.get("spine-flat") == ctx.spine-flat, message: "rheo-spine spine-flat must equal rheo-context().spine-flat")
   assert(s.target == ctx.target, message: "sys.inputs target must equal rheo-context().target")
   assert(s.ext == ctx.ext, message: "sys.inputs ext must equal rheo-context().ext")
 }

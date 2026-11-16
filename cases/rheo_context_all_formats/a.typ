@@ -37,8 +37,9 @@ The output extension for this format is ext=#rheo-context().at("ext", default: "
   // sys.inputs.rheo-context parity (no per-file handle; presence of target/ext matches).
   let s = sys.inputs.rheo-context
   assert("handle" not in s, message: "sys.inputs.rheo-context must NOT carry per-file handle")
-  assert(s.spine == ctx.spine, message: "sys.inputs spine must equal rheo-context().spine")
-  assert(s.spine-flat == ctx.spine-flat, message: "sys.inputs spine-flat must equal rheo-context().spine-flat")
+  assert("spine" not in s and "spine-flat" not in s, message: "the spine lives on sys.inputs.rheo-spine, not rheo-context")
+  assert(sys.inputs.rheo-spine.get("spine") == ctx.spine, message: "rheo-spine spine must equal rheo-context().spine")
+  assert(sys.inputs.rheo-spine.get("spine-flat") == ctx.spine-flat, message: "rheo-spine spine-flat must equal rheo-context().spine-flat")
   assert(("target" in s) == ("target" in ctx), message: "sys/ctx target presence must match")
   assert(("ext" in s) == ("ext" in ctx), message: "sys/ctx ext presence must match")
   assert(s.rheo-version == ctx.rheo-version, message: "sys.inputs rheo-version must equal rheo-context().rheo-version")

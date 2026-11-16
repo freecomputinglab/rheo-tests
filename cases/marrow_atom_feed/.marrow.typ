@@ -1,7 +1,7 @@
 // Hand-rolled Atom feed built from Typst primitives alone -- no @rheo
 // package, no rheo.toml `[html] feed_*` keys, no `#let rheo-feed-*`
 // variables. Proves the primitives (transclusion, rheo-metadata-all,
-// sys.inputs.rheo-context.spine-flat) are sufficient to replace the deleted
+// sys.inputs.rheo-spine.get("spine-flat")) are sufficient to replace the deleted
 // Rust feed generator. At parity with the old
 // ref/cases/feed_asset_verify/feed.xml; the deliberate parity deltas are
 // recorded in this test's doc comment (tests/harness.rs's
@@ -22,7 +22,7 @@
   // Skip any vertebra with no authored date -- there is no output-mtime
   // fallback from Typst (unlike the old Rust generator), so an undated
   // vertebra is left out rather than dated arbitrarily.
-  let dated = sys.inputs.rheo-context.spine-flat.filter(v => "date" in by-handle.at(v.handle, default: (:)))
+  let dated = sys.inputs.rheo-spine.get("spine-flat").filter(v => "date" in by-handle.at(v.handle, default: (:)))
 
   let entry-url(v) = base + "/" + v.path.replace(".typ", ".html")
 
