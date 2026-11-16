@@ -2,9 +2,9 @@
 //! page creation/deletion, edits to the shared `content/lib.typ`, batched
 //! multi-file edits, and a full revert-to-start round trip. These change the
 //! project's STRUCTURE rather than one note's content, which is where state
-//! left over from an earlier rebuild can leak into a later one. All four are
-//! ignored: each needs a `../rookery` checkout and currently fails (see each
-//! test's `#[ignore]` reason).
+//! left over from an earlier rebuild can leak into a later one. Only
+//! `add_and_remove_pages` is still ignored (flaky: deleting a page leaves its
+//! minted `ideas/<id>.html` on disk); see its `#[ignore]` reason.
 
 use rheo_tests::helpers::narrow::html_tree_diffs;
 use rheo_tests::helpers::scenario::{Expect, Scenario, Step, rookery_setup};
@@ -36,7 +36,7 @@ const N13_V2: &str = "#import \"../lib.typ\": demo\n\
 ]\n";
 
 #[test]
-#[ignore = "rheo/rookery: new page n13 narrows to n13 alone, so everything.html's outline is truncated to one row; deleting n13 (full rebuild) leaves ideas/n13a.html on disk; also flaky ideas/n01a.html stale backlink window (fails 3/3)"]
+#[ignore = "rheo: flaky (about 2/3 fail): deleting page n13 (full rebuild) leaves ideas/n13a.html on disk (extra in actual)"]
 fn add_and_remove_pages() {
     let scenario = Scenario {
         name: "add_and_remove_pages",
@@ -67,7 +67,6 @@ fn add_and_remove_pages() {
 }
 
 #[test]
-#[ignore = "rheo/rookery: after a narrowed note-body edit, notes/n05.html's <figure id=\"loc-1\"> loses its id, ideas/n06a.html's backlink window keeps its pre-edit text, and the alpha-tag rename leaves everything.html's outline stale (fails 3/3)"]
 fn library_edit_between_narrowed_edits() {
     let scenario = Scenario {
         name: "library_edit_between_narrowed_edits",
@@ -128,7 +127,6 @@ fn library_edit_between_narrowed_edits() {
 }
 
 #[test]
-#[ignore = "rheo/rookery: after a batched narrowed edit of four note pages, ideas/n01a.html's backlink window keeps its pre-edit text (fails 3/3)"]
 fn batched_multi_file_edit() {
     let scenario = Scenario {
         name: "batched_multi_file_edit",
@@ -242,7 +240,6 @@ fn copy_tree(src: &Path, dest: &Path) {
 }
 
 #[test]
-#[ignore = "rheo/rookery: after narrowed note/post edits, ideas/n01a.html and ideas/n06a.html backlink windows keep their pre-edit text and everything.html's outline is stale after the alpha rename (fails 3/3)"]
 fn revert_to_start() {
     let snapshot_dir = tempfile::tempdir().expect("snapshot tempdir");
     let snapshot_path = snapshot_dir.path().to_path_buf();
