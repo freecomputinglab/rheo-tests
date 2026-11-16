@@ -42,9 +42,6 @@ fn mtime(path: &std::path::Path) -> SystemTime {
 }
 
 #[test]
-#[ignore = "rheo: flaky even with the threshold clamped to 1 - the a->b ligament propagation is \
-            sometimes missed, failing 'unexpected rebuild line: narrowed: 1 vertebra(e) in 1 \
-            round(s) \u{2014} a' (seen in 2 of ~9 runs against feat/performance)"]
 fn attach_edit_recompiles_binder() {
     let (dir, server) = start_watch_narrow_server();
     let project = dir.path();
