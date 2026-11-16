@@ -2,8 +2,9 @@
 //! page creation/deletion, edits to the shared `content/lib.typ`, batched
 //! multi-file edits, and a full revert-to-start round trip. These change the
 //! project's STRUCTURE rather than one note's content, which is where state
-//! left over from an earlier rebuild can leak into a later one. Ignored by
-//! default — each needs a `../rookery` checkout.
+//! left over from an earlier rebuild can leak into a later one. All four are
+//! ignored: each needs a `../rookery` checkout and currently fails (see each
+//! test's `#[ignore]` reason).
 
 use rheo_tests::helpers::narrow::html_tree_diffs;
 use rheo_tests::helpers::scenario::{Expect, Scenario, Step, rookery_setup};
@@ -35,10 +36,7 @@ const N13_V2: &str = "#import \"../lib.typ\": demo\n\
 ]\n";
 
 #[test]
-#[ignore = "rheo: a newly created page narrows to just itself, leaving \
-            everything.html/outline-alpha.html stale (see this file's module \
-            doc); a full rebuild after deleting a page also leaves that \
-            page's old ideas/n13a.html on disk instead of pruning it"]
+#[ignore = "rheo/rookery: new page n13 narrows to n13 alone, so everything.html's outline is truncated to one row; deleting n13 (full rebuild) leaves ideas/n13a.html on disk; also flaky ideas/n01a.html stale backlink window (fails 3/3)"]
 fn add_and_remove_pages() {
     let scenario = Scenario {
         name: "add_and_remove_pages",
@@ -69,12 +67,7 @@ fn add_and_remove_pages() {
 }
 
 #[test]
-#[ignore = "rheo: incoming ligaments never reset across a full rebuild — \
-            ideas/n01a.html's backlink window onto n02a stays stale through \
-            every later step, narrowed or full; renaming a shared tag also \
-            leaves everything.html/outline-alpha.html stale despite both \
-            being named in the narrowed set (bind cycle doesn't reach \
-            fixpoint)"]
+#[ignore = "rheo/rookery: after a narrowed note-body edit, notes/n05.html's <figure id=\"loc-1\"> loses its id, ideas/n06a.html's backlink window keeps its pre-edit text, and the alpha-tag rename leaves everything.html's outline stale (fails 3/3)"]
 fn library_edit_between_narrowed_edits() {
     let scenario = Scenario {
         name: "library_edit_between_narrowed_edits",
@@ -135,9 +128,7 @@ fn library_edit_between_narrowed_edits() {
 }
 
 #[test]
-#[ignore = "rheo: incoming ligaments never reset — ideas/n01a.html's \
-            backlink window from n02a stays stale across both the batched \
-            narrowed rebuild and the following full rebuild"]
+#[ignore = "rheo/rookery: after a batched narrowed edit of four note pages, ideas/n01a.html's backlink window keeps its pre-edit text (fails 3/3)"]
 fn batched_multi_file_edit() {
     let scenario = Scenario {
         name: "batched_multi_file_edit",
@@ -251,10 +242,7 @@ fn copy_tree(src: &Path, dest: &Path) {
 }
 
 #[test]
-#[ignore = "rheo: incoming ligaments never reset across a full rebuild — \
-            once a narrowed edit touches n02a, ideas/n01a.html's backlink \
-            window stays stale even after every edit is reverted, so \
-            build/html never returns to the pre-edit snapshot"]
+#[ignore = "rheo/rookery: after narrowed note/post edits, ideas/n01a.html and ideas/n06a.html backlink windows keep their pre-edit text and everything.html's outline is stale after the alpha rename (fails 3/3)"]
 fn revert_to_start() {
     let snapshot_dir = tempfile::tempdir().expect("snapshot tempdir");
     let snapshot_path = snapshot_dir.path().to_path_buf();
