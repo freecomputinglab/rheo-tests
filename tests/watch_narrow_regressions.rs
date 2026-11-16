@@ -1,13 +1,12 @@
-//! Regression coverage for three narrowed-rebuild (`[watch] narrow = true`)
-//! staleness bugs found by reading rheo's source, each landed as one
-//! `#[ignore]`d test that FAILS on today's rheo — the oracle for every test
-//! is a fresh full `rheo compile` of the edited project.
+//! Regression coverage for narrowed-rebuild (`[watch] narrow = true`)
+//! staleness bugs: each test compares the dev server's narrowed output
+//! against a fresh full `rheo compile` of the edited project.
+//! `metadata_listing_follows_title_edit` stays `#[ignore]`d until rheo makes
+//! metadata reads bind their keys.
 //!
 //! `cases/watch_narrow_regressions` has 6 vertebrae (`post`, `list`,
 //! `holder`, `reader`, `x`, `y`; `_lib/item.typ` is excluded from the spine),
-//! clearing the `floor(total * 0.25) = 1` narrowed-rebuild threshold for a
-//! single dependent (see `tests/watch_narrow.rs`'s doc comment on the same
-//! threshold with a 3-vertebra fixture).
+//! clearing the narrowed-rebuild dependent threshold for a single dependent.
 
 use rheo_tests::helpers::{
     devserver::DevServer,
@@ -57,9 +56,6 @@ fn metadata_listing_follows_title_edit() {
 }
 
 #[test]
-#[ignore = "rheo bug: Build::set_incoming_ligaments is never reset, so a full rebuild \
-            after a narrowed one is still fed the stale ligaments from that earlier \
-            narrowed pass"]
 fn full_rebuild_after_narrowed_drops_stale_ligaments() {
     let (dir, server) = start_server();
     let project = dir.path();
@@ -108,9 +104,6 @@ fn full_rebuild_after_narrowed_drops_stale_ligaments() {
 }
 
 #[test]
-#[ignore = "rheo bug: narrow_one_plugin's `seen` filter skips a dependent already compiled \
-            this rebuild, so a bind cycle (x binds ky, y binds kx) never reaches a fixpoint \
-            on a narrowed rebuild"]
 fn bind_cycle_reaches_fixpoint() {
     let (dir, server) = start_server();
     let project = dir.path();

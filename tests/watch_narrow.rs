@@ -41,21 +41,10 @@ fn mtime(path: &std::path::Path) -> SystemTime {
         .expect("mtime")
 }
 
-// `cases/watch_narrow` has only 3 vertebrae, so `narrow_one_plugin`'s
-// threshold (`(total_vertebrae as f64 * 0.25).floor()`, ../rheo/crates/core/src/build.rs:1972)
-// is 0 — any non-empty dependent set (here, just `b`) always exceeds it,
-// forcing rheo to fall back to a full rebuild instead of the narrowed one
-// this test expects. Observed nondeterministically instead: the propagation
-// from `a` to `b` is sometimes missed entirely, logging only `narrowed: 1
-// vertebra(e) ... — a` with no dependent found at all — a likely race with
-// the dev server's own full in-memory recompile on every edit (see
-// `DevServer::start`'s doc comment) against the same `Build`'s cached
-// ligament state. Neither outcome is reachable with this fixture's size;
-// a larger fixture (5+ vertebrae) would be needed to clear the threshold.
 #[test]
-#[ignore = "rheo: with only 3 vertebrae, floor(3*0.25)=0 makes any ligament-propagated \
-            dependent exceed the narrowed-rebuild threshold, forcing a full rebuild \
-            (or, nondeterministically, the propagation is missed entirely)"]
+#[ignore = "rheo: flaky even with the threshold clamped to 1 - the a->b ligament propagation is \
+            sometimes missed, failing 'unexpected rebuild line: narrowed: 1 vertebra(e) in 1 \
+            round(s) \u{2014} a' (seen in 2 of ~9 runs against feat/performance)"]
 fn attach_edit_recompiles_binder() {
     let (dir, server) = start_watch_narrow_server();
     let project = dir.path();
