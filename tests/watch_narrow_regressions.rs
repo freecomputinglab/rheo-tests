@@ -1,8 +1,6 @@
 //! Regression coverage for narrowed-rebuild (`[watch] narrow = true`)
 //! staleness bugs: each test compares the dev server's narrowed output
 //! against a fresh full `rheo compile` of the edited project.
-//! `metadata_listing_follows_title_edit` stays `#[ignore]`d until rheo makes
-//! metadata reads bind their keys.
 //!
 //! `cases/watch_narrow_regressions` has 6 vertebrae (`post`, `list`,
 //! `holder`, `reader`, `x`, `y`; `_lib/item.typ` is excluded from the spine),
@@ -26,9 +24,6 @@ fn start_server() -> (tempfile::TempDir, DevServer) {
 }
 
 #[test]
-#[ignore = "rheo bug: rheo-metadata-impl never emits a rheo-ligament-bind, so a page \
-            reading another vertebra's metadata via metadata-of is never treated as its \
-            dependent and is not recompiled on a narrowed rebuild"]
 fn metadata_listing_follows_title_edit() {
     let (dir, server) = start_server();
     let project = dir.path();
