@@ -1,0 +1,5 @@
+formats = ["html"]
+
+[watch]
+narrow = "auto"
+cache_size = 0

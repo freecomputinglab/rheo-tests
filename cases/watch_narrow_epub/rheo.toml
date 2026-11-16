@@ -1,0 +1,4 @@
+formats = ["html", "epub"]
+
+[watch]
+narrow = true

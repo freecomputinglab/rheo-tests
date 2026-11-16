@@ -9,7 +9,7 @@ use super::cli::rheo_cli_command;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
-use std::process::{Child, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -227,6 +227,96 @@ impl DevServer {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+    }
+}
+
+/// A `rheo watch --trigger stdin --events <file>` subprocess: no filesystem
+/// watcher, no server. Each [`Self::rebuild`] is one `rebuild` line on stdin
+/// answered by exactly one `build_finished` event, so a test sequences edits
+/// without any debounce or re-edit timing. Killed on drop.
+pub struct StdinWatch {
+    child: Child,
+    stdin: ChildStdin,
+    events: std::path::PathBuf,
+    log: Arc<Mutex<String>>,
+}
+
+impl StdinWatch {
+    /// Spawns the watch session and blocks until its initial build has finished.
+    /// `events_dir` holds the events file and must outlive the session.
+    pub fn start(project_path: &Path, events_dir: &Path, extra_args: &[&str]) -> Self {
+        let events = events_dir.join("events.jsonl");
+        let mut cmd = rheo_cli_command();
+        cmd.arg("watch")
+            .arg(project_path)
+            .args(["--trigger", "stdin", "--events"])
+            .arg(&events)
+            .args(extra_args)
+            .env("TYPST_IGNORE_SYSTEM_FONTS", "1")
+            .env("RUST_LOG", "rheo=info,rheo_core=info")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        set_own_process_group(&mut cmd);
+        let mut child = cmd.spawn().expect("failed to spawn `rheo watch`");
+        let log = Arc::new(Mutex::new(String::new()));
+        spawn_reader(child.stdout.take().unwrap(), log.clone());
+        spawn_reader(child.stderr.take().unwrap(), log.clone());
+        let stdin = child.stdin.take().unwrap();
+        let watch = StdinWatch {
+            child,
+            stdin,
+            events,
+            log,
+        };
+        watch.wait_for_finished(1, STARTUP_TIMEOUT);
+        watch
+    }
+
+    /// Every JSON line written to the events file so far.
+    pub fn events(&self) -> Vec<String> {
+        std::fs::read_to_string(&self.events)
+            .map(|s| s.lines().map(String::from).collect())
+            .unwrap_or_default()
+    }
+
+    fn finished(&self) -> Vec<String> {
+        let mut lines = self.events();
+        lines.retain(|l| l.contains(r#""event":"build_finished""#));
+        lines
+    }
+
+    fn wait_for_finished(&self, count: usize, timeout: Duration) -> Vec<String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let lines = self.finished();
+            if lines.len() >= count {
+                return lines;
+            }
+            if Instant::now() > deadline {
+                panic!(
+                    "expected {count} build_finished event(s) within {timeout:?}; events: {:?}\nlog:\n{}",
+                    self.events(),
+                    self.log.lock().unwrap()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// Requests one rebuild naming `paths` (relative to the project root) and
+    /// returns the `build_finished` event it produced.
+    pub fn rebuild(&mut self, paths: &[&str]) -> String {
+        let before = self.finished().len();
+        writeln!(self.stdin, "rebuild {}", paths.join(" ")).expect("write rebuild request");
+        self.stdin.flush().expect("flush rebuild request");
+        self.wait_for_finished(before + 1, REBUILD_TIMEOUT)[before].clone()
+    }
+}
+
+impl Drop for StdinWatch {
+    fn drop(&mut self) {
+        kill_group(&mut self.child);
     }
 }
 

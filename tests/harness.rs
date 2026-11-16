@@ -111,6 +111,7 @@ fn assert_patterns_present(patterns: &[String], output: &str, label: &str) {
 #[test_case("cases/template_element")]
 #[test_case("cases/footnote_reset_per_page")]
 #[test_case("cases/footnote_no_reset")]
+#[test_case("cases/figure_reset_per_page")]
 #[test_case("cases/bundle_multi_bibliography")]
 #[test_case("cases/metadata_template_title")]
 #[test_case("cases/metadata_show_and_code_block")]
@@ -322,7 +323,7 @@ fn test_pdf_merge() {
     }
 
     // Verify merged PDF created with correct name
-    let pdf_path = build_dir.join("pdf/pdf_merge.pdf");
+    let pdf_path = build_dir.join("pdf/Test Merged Document.pdf");
     assert!(pdf_path.exists(), "Merged PDF not created at expected path");
 
     // Verify valid PDF format and can be loaded
@@ -3166,5 +3167,33 @@ fn test_spine_auto_index_partial_section() {
     assert!(
         built.path("html/grouped/one.html").exists(),
         "the section's regrouped output must still be produced"
+    );
+}
+
+/// `rheo compile --timings <file>` writes Typst's trace as Chrome-tracing JSON:
+/// a non-empty array of events, each with a name and a begin/end phase.
+#[test]
+fn test_compile_timings_writes_json_trace() {
+    let project = TempProject::new(&["html"]).file("main.typ", "= Hello\n\nTest document.\n");
+    let trace = project.path().join("trace.json");
+
+    let output = project.compile(&["--html", "--timings", trace.to_str().unwrap()]);
+    assert!(
+        output.status.success(),
+        "compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let events: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&trace).expect("--timings wrote no file"))
+            .expect("trace is not valid JSON");
+    let events = events.as_array().expect("trace is not a JSON array");
+    assert!(!events.is_empty(), "trace has no events");
+    assert!(
+        events
+            .iter()
+            .any(|e| e["name"] == "compile" && e["ph"] == "B"),
+        "trace should open a `compile` span: {:?}",
+        &events[..events.len().min(3)]
     );
 }
