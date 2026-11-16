@@ -158,20 +158,6 @@ where
     }
 }
 
-fn extract_build_relative_path(repo_relative_path: &str) -> PathBuf {
-    let path = PathBuf::from(repo_relative_path);
-    let components: Vec<_> = path.components().collect();
-    // If path has fewer than 3 components, it's already a build-relative path (e.g. "style.css")
-    if components.len() <= 2 {
-        return path;
-    }
-    let after_project = components.into_iter().skip(2).collect::<PathBuf>();
-    after_project
-        .strip_prefix("content")
-        .unwrap_or(&after_project)
-        .to_path_buf()
-}
-
 fn compare_html_content(reference: &Path, actual: &Path, test_name: &str) -> Result<(), String> {
     let ref_content =
         fs::read_to_string(reference).map_err(|e| format!("Failed to read reference: {}", e))?;
@@ -389,27 +375,7 @@ fn validate_binary_file_from_metadata(
     if let Ok(json_str) = fs::read_to_string(&metadata_path)
         && let Ok(metadata) = serde_json::from_str::<BinaryFileMetadata>(&json_str)
     {
-        // CSS paths are stored as build-relative directly; other binary files
-        // store a repo-relative path that needs the first 2 components stripped.
-        let build_relative_path = if metadata.filetype == "css" {
-            metadata
-                .path
-                .as_ref()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    let file_str = metadata_file.to_string_lossy();
-                    PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-                })
-        } else {
-            metadata
-                .path
-                .as_ref()
-                .map(|p| extract_build_relative_path(p))
-                .unwrap_or_else(|| {
-                    let file_str = metadata_file.to_string_lossy();
-                    PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-                })
-        };
+        let build_relative_path = metadata.build_relative_path(metadata_file);
 
         let actual_file_path = actual_dir.join(&build_relative_path);
 
@@ -461,26 +427,7 @@ fn build_expected_files_set(
         if let Ok(json_str) = fs::read_to_string(&metadata_path)
             && let Ok(metadata) = serde_json::from_str::<BinaryFileMetadata>(&json_str)
         {
-            let build_relative_path = if metadata.filetype == "css" {
-                metadata
-                    .path
-                    .as_ref()
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| {
-                        let file_str = metadata_file.to_string_lossy();
-                        PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-                    })
-            } else {
-                metadata
-                    .path
-                    .as_ref()
-                    .map(|p| extract_build_relative_path(p))
-                    .unwrap_or_else(|| {
-                        let file_str = metadata_file.to_string_lossy();
-                        PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
-                    })
-            };
-            expected_files.insert(build_relative_path);
+            expected_files.insert(metadata.build_relative_path(metadata_file));
         }
     }
 
@@ -498,6 +445,17 @@ pub struct BinaryFileMetadata {
     pub page_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hash: Option<String>,
+}
+
+impl BinaryFileMetadata {
+    /// Where the file sits in the build output: its recorded `path`, else the
+    /// reference's own name with `.metadata.json` stripped.
+    fn build_relative_path(&self, metadata_file: &Path) -> PathBuf {
+        self.path.as_ref().map(PathBuf::from).unwrap_or_else(|| {
+            let file_str = metadata_file.to_string_lossy();
+            PathBuf::from(file_str.strip_suffix(".metadata.json").unwrap_or(&file_str))
+        })
+    }
 }
 
 fn default_filetype() -> String {

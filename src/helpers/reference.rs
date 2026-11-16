@@ -58,7 +58,7 @@ pub fn update_html_references(
     }
 
     // Copy all files from actual to reference, replacing binary files with .metadata.json
-    copy_directory_with_binary_refs(actual_dir, &ref_dir, project_path)?;
+    copy_directory_with_binary_refs(actual_dir, &ref_dir)?;
 
     println!(
         "Updated HTML references for {} at {}",
@@ -291,11 +291,7 @@ pub fn update_epub_references(test_name: &str, actual_dir: &Path) -> Result<(), 
 }
 
 /// Copy directory recursively, replacing binary files with .metadata.json references
-pub fn copy_directory_with_binary_refs(
-    src: &Path,
-    dst: &Path,
-    project_path: &Path,
-) -> Result<(), String> {
+pub fn copy_directory_with_binary_refs(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("Failed to create directory: {}", e))?;
 
     for entry in WalkDir::new(src) {
@@ -311,7 +307,7 @@ pub fn copy_directory_with_binary_refs(
                 .map_err(|e| format!("Failed to create directory: {}", e))?;
         } else if is_binary_file(entry.path()) {
             // For binary files, create .metadata.json instead of copying
-            let metadata = create_binary_metadata(entry.path(), rel_path, project_path)?;
+            let metadata = create_binary_metadata(entry.path(), rel_path)?;
 
             let metadata_path = dst_path.with_extension("metadata.json");
             let json = serde_json::to_string_pretty(&metadata)
@@ -342,11 +338,7 @@ fn is_binary_file(path: &Path) -> bool {
 }
 
 /// Create metadata for a binary file
-fn create_binary_metadata(
-    file_path: &Path,
-    rel_path: &Path,
-    project_path: &Path,
-) -> Result<BinaryFileMetadata, String> {
+fn create_binary_metadata(file_path: &Path, rel_path: &Path) -> Result<BinaryFileMetadata, String> {
     let file_size = fs::metadata(file_path)
         .map_err(|e| format!("Failed to read file metadata: {}", e))?
         .len();
@@ -368,23 +360,10 @@ fn create_binary_metadata(
         None
     };
 
-    // Detect source file location to create repo-relative path
-    // For CSS files, store the build-relative path directly (CSS is at the html root)
-    let repo_relative_path = if filetype == "css" {
-        PathBuf::from(rel_path)
-    } else if project_path.join("content").join(rel_path).exists() {
-        project_path.join("content").join(rel_path)
-    } else if project_path.join(rel_path).exists() {
-        project_path.join(rel_path)
-    } else {
-        // Fallback: just prepend project path to rel_path
-        project_path.join(rel_path)
-    };
-
     Ok(BinaryFileMetadata {
         filetype,
         file_size,
-        path: Some(repo_relative_path.to_string_lossy().to_string()),
+        path: Some(rel_path.to_string_lossy().to_string()),
         page_count: None,
         hash,
     })
