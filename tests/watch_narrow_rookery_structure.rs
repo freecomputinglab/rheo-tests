@@ -34,6 +34,7 @@ const N13_V2: &str = "#import \"../lib.typ\": demo\n\
 ]\n";
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn add_and_remove_pages() {
     let scenario = Scenario {
         name: "add_and_remove_pages",
@@ -64,6 +65,7 @@ fn add_and_remove_pages() {
 }
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn library_edit_between_narrowed_edits() {
     let scenario = Scenario {
         name: "library_edit_between_narrowed_edits",
@@ -124,6 +126,7 @@ fn library_edit_between_narrowed_edits() {
 }
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn batched_multi_file_edit() {
     let scenario = Scenario {
         name: "batched_multi_file_edit",
@@ -237,6 +240,7 @@ fn copy_tree(src: &Path, dest: &Path) {
 }
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn revert_to_start() {
     let snapshot_dir = tempfile::tempdir().expect("snapshot tempdir");
     let snapshot_path = snapshot_dir.path().to_path_buf();

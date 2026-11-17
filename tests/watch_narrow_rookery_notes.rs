@@ -6,6 +6,7 @@ use rheo_tests::helpers::scenario::{Expect, Scenario, Step, rookery_setup};
 use std::fs;
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn note_lifecycle() {
     // n07a has no inbound @idea:/#window references from any other page, so
     // deleting its idea call (below) doesn't break an unrelated page's link —
@@ -78,6 +79,7 @@ fn note_lifecycle() {
 }
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn backlinks_follow_links() {
     let scenario = Scenario {
         name: "backlinks_follow_links",
@@ -144,6 +146,7 @@ fn backlinks_follow_links() {
 }
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn note_moves_between_pages() {
     let block = "#idea(\"n11b\", title: [N11 B], tags: (\"gamma\",))[\n  Second of a pair.\n]\n";
     let edited_block = "#idea(\"n11b\", title: [N11 B], tags: (\"gamma\",))[\n  Second of a pair, now elsewhere.\n]\n";
@@ -215,6 +218,7 @@ fn note_moves_between_pages() {
 }
 
 #[test]
+#[ignore = "needs ../rookery checkout"]
 fn rename_note_id() {
     let scenario = Scenario {
         name: "rename_note_id",
