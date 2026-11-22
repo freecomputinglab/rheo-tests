@@ -6,7 +6,7 @@ priority: 3
 labels:
 - fix-flight-sibling-path-dep
 deps: []
-closed: false
+closed: true
 ---
 Touches: .cargo/config.toml (new, gitignored), .gitignore, README.md, and possibly scripts/flight-setup.sh (new) + CLAUDE.md (new)
 

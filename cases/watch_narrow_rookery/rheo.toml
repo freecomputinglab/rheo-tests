@@ -1,0 +1,16 @@
+# A ~20-page rookery fixture for scenario-driven `[watch] narrow = true`
+# correctness checks (see `src/helpers/scenario.rs`). `version` is injected by
+# `copy_project_to_test_store` at test time.
+content_dir = "content"
+formats = ["html"]
+
+[spine]
+exclude = ["lib.typ"]
+
+[watch]
+narrow = true
+
+# Replaced with an absolute path at test time by `scenario::rookery_setup` —
+# a relative path breaks once this fixture is copied to a tempdir.
+[packages.rookery]
+path = "ROOKERY_DIR"

@@ -110,6 +110,10 @@ The `rheo_cli_command()` helper builds a `Command` that invokes rheo. It respect
 - **`RHEO_MANIFEST=../rheo/Cargo.toml`** — Required for standalone runs. Points to the main rheo `Cargo.toml` so `cargo run -p rheo` finds the package. Without this, tests in the standalone repo fail to locate rheo.
 - **`RHEO_BIN=<path>`** — Optional. Path to a prebuilt rheo binary. When set, invokes the binary directly instead of `cargo run -p rheo --`. Useful for testing a built artifact without recompiling.
 
+### Building inside a `bd` flight
+
+A `bd` flight lives at `.birds/workspaces/<bird-id>/<flight-id>/`, so `Cargo.toml`'s `../rheo/crates/*` path deps resolve to a `rheo` checkout beside the *bird* directory, not the real sibling checkout. Run `scripts/flight-setup.sh <flight-path>` once per flight to symlink it in. See `CLAUDE.md` for the full note, including `CARGO_TARGET_DIR` reuse.
+
 ### Test Filtering
 
 - **`TYPST_IGNORE_SYSTEM_FONTS=1`** — Set automatically by the harness. Uses only Typst's embedded fonts for deterministic output across platforms.

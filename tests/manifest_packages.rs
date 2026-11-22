@@ -1,7 +1,8 @@
 use rheo_core::config::manifest_version;
 use rheo_core::packages::PackageIndex;
+use rheo_core::reticulate::MarrowSource;
 use rheo_tests::helpers::cli::rheo_cli_command;
-use rheo_tests::helpers::project::FakePackage;
+use rheo_tests::helpers::project::{FakePackage, TempProject};
 
 #[test]
 fn detect_manifest_package_assets_reads_tool_rheo_section() {
@@ -606,6 +607,10 @@ fn stage_package_with_marrow(marrow: Option<&str>) -> tempfile::TempDir {
     search_root
 }
 
+fn marrow_texts(found: &[MarrowSource]) -> Vec<&str> {
+    found.iter().map(|m| m.text.as_str()).collect()
+}
+
 /// A package's marrow is inlined verbatim — rheo neither parses nor rewrites it.
 #[test]
 fn detect_package_marrow_returns_the_file_verbatim() {
@@ -615,7 +620,7 @@ fn detect_package_marrow_returns_the_file_verbatim() {
     let imports = vec!["@mns/mpkg:0.1.0".to_string()];
     let found = PackageIndex::new(&imports, &[root.path().to_path_buf()]).marrow();
 
-    assert_eq!(found, vec![text.to_string()]);
+    assert_eq!(marrow_texts(&found), [text]);
 }
 
 #[test]
@@ -641,10 +646,7 @@ fn detect_package_marrow_collects_every_package_in_import_order() {
     let imports = vec!["@mns/bpkg:0.1.0".to_string(), "@mns/apkg:0.1.0".to_string()];
     let found = PackageIndex::new(&imports, &[search_root.path().to_path_buf()]).marrow();
 
-    assert_eq!(
-        found,
-        vec!["#let b = 2\n".to_string(), "#let a = 1\n".to_string()]
-    );
+    assert_eq!(marrow_texts(&found), ["#let b = 2\n", "#let a = 1\n"]);
 }
 
 /// A project's own marrow and an imported package's are both inlined — neither
@@ -1320,5 +1322,70 @@ Test document.
     assert!(
         root_pos < leaf_pos,
         "root package's <script> should appear before leaf's:\n{html}"
+    );
+}
+
+/// A `[packages.<ns>] packages = [...]` table serves only the packages it
+/// names: `a` comes from the table's `path`, `b` — present at the same `path`
+/// too — falls through to the default Typst package directory as if the table
+/// were absent.
+#[test]
+fn packages_key_limits_path_table_to_named_packages() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let pkgs = tempfile::tempdir().unwrap();
+    let who = |name: &str, origin: &str| {
+        (
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n"
+            ),
+            format!("#let who = \"{origin}\"\n"),
+        )
+    };
+    let stage = |root: &std::path::Path, name: &str, origin: &str| {
+        let (manifest, lib) = who(name, origin);
+        FakePackage::new(root, &format!("@demo/{name}:0.1.0"))
+            .manifest(&manifest)
+            .file("lib.typ", &lib);
+    };
+    stage(pkgs.path(), "a", "a-from-path");
+    stage(pkgs.path(), "b", "b-from-path");
+    stage(
+        &data_dir.path().join("typst/packages"),
+        "b",
+        "b-from-default",
+    );
+
+    let project = TempProject::new(&["html"])
+        .config(&format!(
+            "\n[packages.demo]\npath = \"{}\"\npackages = [\"a\"]\n",
+            pkgs.path().join("demo").display()
+        ))
+        .file(
+            "main.typ",
+            "#import \"@demo/a:0.1.0\"\n#import \"@demo/b:0.1.0\"\n\
+             = Hello\n\nA says #a.who. B says #b.who.\n",
+        );
+
+    let output = project.compile_with_env(
+        &["--html"],
+        &[
+            ("XDG_CACHE_HOME", data_dir.path()),
+            ("XDG_DATA_HOME", data_dir.path()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "compilation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let html = project.read_built("html/main.html");
+    assert!(
+        html.contains("a-from-path"),
+        "a should come from the table's path:\n{html}"
+    );
+    assert!(
+        html.contains("b-from-default") && !html.contains("b-from-path"),
+        "b is not named in `packages`, so it must resolve as if the table were absent:\n{html}"
     );
 }

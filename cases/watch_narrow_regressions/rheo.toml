@@ -1,0 +1,7 @@
+formats = ["html"]
+
+[spine]
+exclude = ["_lib/**"]
+
+[watch]
+narrow = true

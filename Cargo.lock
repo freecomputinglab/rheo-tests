@@ -2892,6 +2892,8 @@ dependencies = [
  "typst-library",
  "typst-pdf",
  "typst-syntax",
+ "typst-timing",
+ "typst-utils",
  "walkdir",
 ]
 

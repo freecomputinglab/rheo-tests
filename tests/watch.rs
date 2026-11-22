@@ -119,6 +119,89 @@ fn dev_server_serves_and_rebuilds_on_change() {
     );
 }
 
+/// The `.typ` list a watch session works from must follow the disk, not the
+/// startup snapshot: deleting and adding sources mid-session must not make
+/// rheo reread files that are gone.
+#[test]
+fn watch_survives_deleted_and_added_sources() {
+    let project = tempfile::tempdir().expect("tempdir");
+    let content = project.path().join("content");
+    let sub = content.join("sub");
+    fs::create_dir_all(&sub).expect("mkdir content/sub");
+    fs::write(
+        project.path().join("rheo.toml"),
+        format!(
+            "version = \"{}\"\nformats = [\"html\"]\n",
+            rheo_core::config::manifest_version::CURRENT
+        ),
+    )
+    .expect("write rheo.toml");
+    let index = content.join("index.typ");
+    let a = content.join("a.typ");
+    let c = content.join("c.typ");
+    fs::write(&index, "= Index\n").expect("write index.typ");
+    fs::write(&a, "= A\n").expect("write a.typ");
+    fs::write(sub.join("b.typ"), "= B\n").expect("write b.typ");
+
+    let server = DevServer::start(project.path(), &["--html"]);
+    // A delete before the watcher registers raises no event to rebuild on.
+    while !server.log().contains("watching for changes") {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    server.edit_and_wait_for_rebuild(|| {
+        let _ = fs::remove_file(&a);
+    });
+    server.edit_and_wait_for_rebuild(|| {
+        let _ = fs::remove_dir_all(&sub);
+    });
+    server.edit_and_wait_for_rebuild(|| fs::write(&c, "= C\n").expect("write c.typ"));
+    server.edit_and_wait_for_rebuild(|| {
+        fs::write(&index, "= Index\nMarker-v2\n").expect("rewrite index")
+    });
+
+    let log = server.log();
+    assert!(
+        !log.contains("could not read .typ for package import scan"),
+        "rheo reread a deleted source:\n{log}"
+    );
+}
+
+/// The watcher's asset registrar is rebuilt on config reload: a stylesheet
+/// added to `rheo.toml` mid-session must itself be watched afterwards.
+#[test]
+fn watch_picks_up_an_asset_added_by_a_config_reload() {
+    let project = tempfile::tempdir().expect("tempdir");
+    let content = project.path().join("content");
+    fs::create_dir_all(&content).expect("mkdir content");
+    let config = project.path().join("rheo.toml");
+    let base = format!(
+        "version = \"{}\"\nformats = [\"html\"]\n",
+        rheo_core::config::manifest_version::CURRENT
+    );
+    fs::write(&config, &base).expect("write rheo.toml");
+    fs::write(content.join("index.typ"), "= Index\n").expect("write index.typ");
+    let theme = project.path().join("theme.css");
+    fs::write(&theme, "/* Theme-v1 */\n").expect("write theme.css");
+
+    let server = DevServer::start(project.path(), &["--html"]);
+    while !server.log().contains("watching for changes") {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let with_css = format!("{base}\n[[html.assets]]\ncss_stylesheet = \"./theme.css\"\n");
+    server.wait_for_edit(
+        "/theme.css",
+        || fs::write(&config, &with_css).expect("rewrite rheo.toml"),
+        |b| b.contains("Theme-v1"),
+    );
+    server.wait_for_edit(
+        "/theme.css",
+        || fs::write(&theme, "/* Theme-v2 */\n").expect("rewrite theme.css"),
+        |b| b.contains("Theme-v2"),
+    );
+}
+
 /// A `<rheo-content>` placeholder may name a marrow-minted page whose output
 /// path does not end in `.html`. The on-disk path always allowed that; the
 /// dev-server path filtered its transclusion source map by extension, so the
